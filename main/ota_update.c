@@ -394,7 +394,7 @@ static esp_err_t spiffs_list_handler(httpd_req_t *req)
 esp_err_t ota_update_init(void)
 {
     ESP_LOGI(TAG, "OTA update module initialized");
-    ESP_LOGI(TAG, "Firmware version: %s (build %d)", FW_VERSION, FW_BUILD_NUMBER);
+    ESP_LOGI(TAG, "Firmware version: %s (build %s)", FW_VERSION, FW_BUILD_DATE);
     return ESP_OK;
 }
 

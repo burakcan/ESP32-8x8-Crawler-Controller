@@ -10,12 +10,12 @@
 #include "esp_err.h"
 
 // Servo indices (one servo per axle)
+// Note: SERVO_COUNT is defined in config.h
 typedef enum {
     SERVO_AXLE_1 = 0,   // Front axle
     SERVO_AXLE_2,       // Second axle
     SERVO_AXLE_3,       // Third axle
-    SERVO_AXLE_4,       // Rear axle
-    SERVO_COUNT
+    SERVO_AXLE_4        // Rear axle
 } servo_id_t;
 
 /**

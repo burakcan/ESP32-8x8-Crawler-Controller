@@ -18,28 +18,32 @@
 #define PROJECT_NAME        "8x8 Crawler Controller"
 
 // ============================================================================
-// PIN DEFINITIONS
+// PIN DEFINITIONS (ESP32-S3 Mini)
 // ============================================================================
 
 // RC Receiver Input Pins (directly from receiver channels)
-#define PIN_RC_THROTTLE     34  // Channel 1 - Throttle (GPIO 34 - input only)
-#define PIN_RC_STEERING     35  // Channel 2 - Steering (GPIO 35 - input only)
-#define PIN_RC_AUX1         32  // Channel 3 - Aux 1 / Mode select
-#define PIN_RC_AUX2         33  // Channel 4 - Aux 2 / Extra
+// ESP32-S3 Mini - 6 channel receiver
+#define PIN_RC_STEERING     6   // Channel 1 - Steering
+#define PIN_RC_THROTTLE     5   // Channel 2 - Throttle
+#define PIN_RC_AUX1         4   // Channel 3 - Aux 1 / Mode select
+#define PIN_RC_AUX2         3   // Channel 4 - Aux 2 / Extra
+#define PIN_RC_AUX3         2   // Channel 5 - Aux 3 (reserved)
+#define PIN_RC_AUX4         1   // Channel 6 - Aux 4 (reserved)
 
 // ESC Output Pin
-#define PIN_ESC             18  // Main drive motor ESC
+#define PIN_ESC             12  // Main drive motor ESC
 
 // Servo Output Pins (4 servos for 8x8 steering - one per axle)
 // Axle numbering: 1=front, 2, 3, 4=rear
 // Axles 1-2 steer together, Axles 3-4 steer together
-#define PIN_SERVO_AXLE_1    19  // Axle 1 (front) steering servo
-#define PIN_SERVO_AXLE_2    21  // Axle 2 steering servo
-#define PIN_SERVO_AXLE_3    22  // Axle 3 steering servo
-#define PIN_SERVO_AXLE_4    23  // Axle 4 (rear) steering servo
+#define PIN_SERVO_AXLE_1    8   // Axle 1 (front) steering servo
+#define PIN_SERVO_AXLE_2    9   // Axle 2 steering servo
+#define PIN_SERVO_AXLE_3    10  // Axle 3 steering servo
+#define PIN_SERVO_AXLE_4    11  // Axle 4 (rear) steering servo
 
-// Status LED (optional - use built-in LED on DevKit)
-#define PIN_STATUS_LED      2   // Built-in LED on most ESP32 DevKits
+// Status LED (RGB WS2812 on ESP32-S3 Mini)
+#define PIN_STATUS_LED      21  // RGB LED on ESP32-S3 Mini
+#define STATUS_LED_IS_RGB   1   // Flag indicating RGB LED (WS2812)
 
 // ============================================================================
 // RC SIGNAL PARAMETERS
@@ -73,15 +77,17 @@
 // CALIBRATION PARAMETERS
 // ============================================================================
 
-// Number of RC channels to calibrate
-#define RC_CHANNEL_COUNT        4
+// Number of RC channels
+#define RC_CHANNEL_COUNT        6
 
 // Channel indices
 typedef enum {
     RC_CH_THROTTLE = 0,
     RC_CH_STEERING = 1,
     RC_CH_AUX1 = 2,
-    RC_CH_AUX2 = 3
+    RC_CH_AUX2 = 3,
+    RC_CH_AUX3 = 4,
+    RC_CH_AUX4 = 5
 } rc_channel_t;
 
 // Calibration data structure for a single channel
@@ -116,7 +122,6 @@ typedef enum {
     STEER_MODE_REAR,            // Axles 3-4 steer, 1-2 fixed
     STEER_MODE_ALL_AXLE,        // All axles steer (1-2 opposite to 3-4)
     STEER_MODE_CRAB,            // All axles steer same direction (crab walk)
-    STEER_MODE_SPIN,            // Maximum turn (spin in place)
     STEER_MODE_COUNT            // Number of steering modes
 } steering_mode_t;
 
@@ -135,6 +140,74 @@ typedef enum {
 #define NVS_NAMESPACE           "crawler_cfg"
 #define NVS_KEY_CALIBRATION     "calibration"
 #define NVS_KEY_WIFI_STA        "wifi_sta"
+#define NVS_KEY_TUNING          "tuning"
+
+// ============================================================================
+// TUNING CONFIGURATION
+// ============================================================================
+
+// Number of steering servos (one per axle)
+#define SERVO_COUNT             4
+
+// Per-servo tuning: endpoints, subtrim, trim, reverse
+typedef struct {
+    uint16_t min_us;        // Minimum pulse width (full left endpoint)
+    uint16_t max_us;        // Maximum pulse width (full right endpoint)
+    int16_t subtrim;        // Mechanical center offset, shifts endpoints too (-200 to +200 µs)
+    int16_t trim;           // Operational center offset, endpoints stay fixed (-200 to +200 µs)
+    bool reversed;          // Invert servo direction
+} servo_tuning_t;
+
+// Steering geometry settings
+typedef struct {
+    uint8_t axle_ratio[4];       // Steering ratio for each axle (0-100%)
+    uint8_t all_axle_rear_ratio; // Rear axle ratio in all-axle mode (0-100%)
+    uint8_t expo;                // Steering expo curve (0-100%, 0=linear)
+    uint8_t speed_steering;      // Speed-dependent steering reduction (0-100%, 0=disabled)
+} steering_tuning_t;
+
+// ESC/Motor tuning settings
+typedef struct {
+    uint8_t fwd_limit;          // Forward speed limit (0-100%)
+    uint8_t rev_limit;          // Reverse speed limit (0-100%)
+    int8_t subtrim;             // Neutral offset (-100 to +100 µs)
+    uint8_t deadzone;           // Deadzone around neutral (0-100)
+    bool reversed;              // Invert throttle direction
+    bool realistic_throttle;    // Enable realistic coasting/drag brake behavior
+    uint8_t coast_rate;         // Coast deceleration rate (0-100, higher = slower coast)
+    uint8_t brake_force;        // Active brake strength (0-100%, how hard braking stops you)
+} esc_tuning_t;
+
+// Complete tuning configuration
+typedef struct {
+    uint32_t magic;             // Magic number to verify valid data
+    uint32_t version;           // Tuning data version
+    servo_tuning_t servos[SERVO_COUNT];
+    steering_tuning_t steering;
+    esc_tuning_t esc;
+} tuning_config_t;
+
+#define TUNING_MAGIC            0x54554E45  // "TUNE" in hex
+#define TUNING_VERSION          7           // Bumped: drag_brake -> brake_force
+
+// Default tuning values
+#define TUNING_DEFAULT_SERVO_MIN        1000
+#define TUNING_DEFAULT_SERVO_MAX        2000
+#define TUNING_DEFAULT_SUBTRIM          0
+#define TUNING_DEFAULT_TRIM             0
+#define TUNING_DEFAULT_AXLE1_RATIO      100
+#define TUNING_DEFAULT_AXLE2_RATIO      70
+#define TUNING_DEFAULT_AXLE3_RATIO      70
+#define TUNING_DEFAULT_AXLE4_RATIO      100
+#define TUNING_DEFAULT_ALL_AXLE_REAR    80
+#define TUNING_DEFAULT_EXPO             0
+#define TUNING_DEFAULT_SPEED_STEERING   0       // 0=disabled, 100=max reduction at full throttle
+#define TUNING_DEFAULT_FWD_LIMIT        100
+#define TUNING_DEFAULT_REV_LIMIT        100
+#define TUNING_DEFAULT_ESC_DEADZONE     30
+#define TUNING_DEFAULT_REALISTIC        false   // Default to instant response (current behavior)
+#define TUNING_DEFAULT_COAST_RATE       50      // Medium coast speed (0=fast stop, 100=slow coast)
+#define TUNING_DEFAULT_BRAKE_FORCE      50      // Medium brake strength (0=weak, 100=instant stop)
 
 // ============================================================================
 // WIFI STATION MODE CONFIGURATION
@@ -168,6 +241,6 @@ typedef struct {
 
 // Timer resolution
 #define MCPWM_TIMER_RESOLUTION_HZ   1000000  // 1MHz = 1us resolution
-#define MCPWM_CAPTURE_RESOLUTION_HZ 80000000 // 80MHz (fixed on ESP32)
+#define MCPWM_CAPTURE_RESOLUTION_HZ 80000000 // 80MHz APB clock (both ESP32 and ESP32-S3)
 
 #endif // CONFIG_H

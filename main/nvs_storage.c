@@ -218,3 +218,99 @@ void nvs_get_default_wifi_config(crawler_wifi_config_t *config)
     config->connected = false;
     ESP_LOGI(TAG, "Default WiFi config set (disabled)");
 }
+
+esp_err_t nvs_save_tuning(const tuning_config_t *config)
+{
+    nvs_handle_t handle;
+    esp_err_t ret;
+
+    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = nvs_set_blob(handle, NVS_KEY_TUNING, config, sizeof(tuning_config_t));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write tuning config: %s", esp_err_to_name(ret));
+        nvs_close(handle);
+        return ret;
+    }
+
+    ret = nvs_commit(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Tuning config saved to NVS");
+    }
+
+    nvs_close(handle);
+    return ret;
+}
+
+esp_err_t nvs_load_tuning(tuning_config_t *config)
+{
+    nvs_handle_t handle;
+    esp_err_t ret;
+
+    ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    size_t required_size = sizeof(tuning_config_t);
+    ret = nvs_get_blob(handle, NVS_KEY_TUNING, config, &required_size);
+
+    nvs_close(handle);
+
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No tuning config found in NVS");
+        return ret;
+    }
+
+    // Verify magic number
+    if (config->magic != TUNING_MAGIC) {
+        ESP_LOGW(TAG, "Invalid tuning config magic number");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "Tuning config loaded from NVS (version %lu)", (unsigned long)config->version);
+    return ESP_OK;
+}
+
+esp_err_t nvs_storage_set_blob(const char *key, const void *data, size_t len)
+{
+    nvs_handle_t handle;
+    esp_err_t ret;
+
+    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = nvs_set_blob(handle, key, data, len);
+    if (ret == ESP_OK) {
+        ret = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+    return ret;
+}
+
+esp_err_t nvs_storage_get_blob(const char *key, void *data, size_t *len)
+{
+    nvs_handle_t handle;
+    esp_err_t ret;
+
+    ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    ret = nvs_get_blob(handle, key, data, len);
+    nvs_close(handle);
+
+    return ret;
+}

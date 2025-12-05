@@ -18,15 +18,19 @@ static const int rc_gpio_pins[RC_CHANNEL_COUNT] = {
     PIN_RC_THROTTLE,    // Channel 0
     PIN_RC_STEERING,    // Channel 1
     PIN_RC_AUX1,        // Channel 2
-    PIN_RC_AUX2         // Channel 3
+    PIN_RC_AUX2,        // Channel 3
+    PIN_RC_AUX3,        // Channel 4
+    PIN_RC_AUX4         // Channel 5
 };
 
 // Channel names for logging
 static const char *rc_channel_names[RC_CHANNEL_COUNT] = {
     "Throttle",
-    "Steering", 
+    "Steering",
     "Aux1",
-    "Aux2"
+    "Aux2",
+    "Aux3",
+    "Aux4"
 };
 
 // Capture channel handles
@@ -99,28 +103,28 @@ esp_err_t rc_input_init(void)
     }
     
     // ESP32 MCPWM has only 3 capture channels per group
-    // Use group 0 for channels 0-2, group 1 for channel 3
+    // Use group 0 for channels 0-2, group 1 for channels 3-5
     mcpwm_cap_timer_handle_t cap_timers[2] = {NULL, NULL};
-    
-    // Create capture timer for group 0 (channels 0-2)
+
+    // Create capture timer for group 0 (channels 0-2: throttle, steering, aux1)
     mcpwm_capture_timer_config_t cap_timer_config_0 = {
         .clk_src = MCPWM_CAPTURE_CLK_SRC_DEFAULT,
         .group_id = 0,
         .resolution_hz = MCPWM_CAPTURE_RESOLUTION_HZ,
     };
     ESP_ERROR_CHECK(mcpwm_new_capture_timer(&cap_timer_config_0, &cap_timers[0]));
-    
-    // Create capture timer for group 1 (channel 3)
+
+    // Create capture timer for group 1 (channels 3-5: aux2, aux3, aux4)
     mcpwm_capture_timer_config_t cap_timer_config_1 = {
         .clk_src = MCPWM_CAPTURE_CLK_SRC_DEFAULT,
         .group_id = 1,
         .resolution_hz = MCPWM_CAPTURE_RESOLUTION_HZ,
     };
     ESP_ERROR_CHECK(mcpwm_new_capture_timer(&cap_timer_config_1, &cap_timers[1]));
-    
+
     // Create capture channel for each RC input
     for (int i = 0; i < RC_CHANNEL_COUNT; i++) {
-        // Select which timer to use: channels 0-2 use group 0, channel 3 uses group 1
+        // Select which timer to use: channels 0-2 use group 0, channels 3-5 use group 1
         mcpwm_cap_timer_handle_t timer = (i < 3) ? cap_timers[0] : cap_timers[1];
         
         mcpwm_capture_channel_config_t cap_chan_config = {

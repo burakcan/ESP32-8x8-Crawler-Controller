@@ -1,11 +1,11 @@
 # 8x8 Crawler Controller
 
-ESP32-based controller for an 8x8 RC crawler with multi-axle steering support.
+ESP32-S3 based controller for an 8x8 RC crawler with multi-axle steering support.
 
 ## Features
 
-- **4-Channel RC Input** - Reads throttle, steering, and 2 aux channels
-- **ESC Control** - Motor speed control with failsafe
+- **6-Channel RC Input** - Reads throttle, steering, and 4 aux channels
+- **ESC Control** - Motor speed control, optional realistic throttle (coasting/drag brake)
 - **4 Servo Outputs** - Independent steering for all 4 axles
 - **Web Dashboard** - Real-time status via WiFi (phone/tablet/PC)
 - **Multiple Steering Modes** (for 4-axle, 8-wheel vehicle):
@@ -13,27 +13,32 @@ ESP32-based controller for an 8x8 RC crawler with multi-axle steering support.
   - Rear steering (Axles 3-4)
   - All-axle steering (tight turns)
   - Crab steering (sideways movement)
-  - Spin mode (rotation in place)
 - **Automatic Calibration** - Learns your transmitter's range
-- **Persistent Storage** - Calibration saved to flash (NVS)
-- **Failsafe Protection** - Safe stop on signal loss
+- **Servo & ESC Tuning** - Endpoints, trim/subtrim, expo, throttle limits
+- **OTA Updates** - Firmware updates via web interface
+- **WiFi STA Mode** - Connect to existing WiFi network
+- **Persistent Storage** - Calibration and tuning saved to flash (NVS)
+- **RGB Status LED** - WS2812 LED with colorful effects
+- **UDP Logging** - Wireless debug logging over UDP
 
 ## Hardware Setup
 
 ### Pin Configuration
 
-| Function    | GPIO | Description                  |
-| ----------- | ---- | ---------------------------- |
-| RC Throttle | 34   | Channel 1 input (input-only) |
-| RC Steering | 35   | Channel 2 input (input-only) |
-| RC Aux1     | 32   | Cha nnel 3 input             |
-| RC Aux2     | 33   | Channel 4 input              |
-| ESC         | 18   | Motor ESC signal output      |
-| Servo A1    | 19   | Axle 1 (front) servo         |
-| Servo A2    | 21   | Axle 2 servo                 |
-| Servo A3    | 22   | Axle 3 servo                 |
-| Servo A4    | 23   | Axle 4 (rear) servo          |
-| Status LED  | 2    | Built-in LED (DevKit)        |
+| Function | GPIO | Description |
+| ----------- | ---- | ------------------------------ |
+| RC Steering | 6 | Channel 1 input |
+| RC Throttle | 5 | Channel 2 input |
+| RC Aux1 | 4 | Channel 3 input (mode select) |
+| RC Aux2 | 3 | Channel 4 input |
+| RC Aux3 | 2 | Channel 5 input (reserved) |
+| RC Aux4 | 1 | Channel 6 input (reserved) |
+| ESC | 12 | Motor ESC signal output |
+| Servo A1 | 8 | Axle 1 (front) servo |
+| Servo A2 | 9 | Axle 2 servo |
+| Servo A3 | 10 | Axle 3 servo |
+| Servo A4 | 11 | Axle 4 (rear) servo |
+| Status LED | 21 | RGB WS2812 LED |
 
 ### 8x8 Vehicle Layout
 
@@ -56,16 +61,9 @@ ESP32-based controller for an 8x8 RC crawler with multi-axle steering support.
 - Axles 1-2 steer together in front-steer mode
 - Axles 3-4 steer together in rear-steer mode
 
-### Wiring Notes
-
-- All grounds must be connected together (ESP32, receiver, ESC, servos)
-- RC receiver powered from 5V (BEC or external)
-- Servos powered from separate BEC (5-6V, sufficient current)
-- ESC powered from main battery
-
 ## Web Dashboard
 
-The ESP32 creates a WiFi access point for real-time monitoring:
+The ESP32 creates a WiFi access point for real-time monitoring and configuration:
 
 | Setting   | Value                |
 | --------- | -------------------- |
@@ -80,6 +78,13 @@ The ESP32 creates a WiFi access point for real-time monitoring:
 3. See real-time RC inputs, ESC/servo status, and steering mode
 
 The dashboard updates 10 times per second via WebSocket.
+
+### Web Pages
+
+- **Dashboard** - Real-time status, steering mode selection, RC inputs, servo outputs
+- **Settings** - WiFi STA configuration, OTA firmware updates
+- **Calibration** - Web-based RC transmitter calibration
+- **Tuning** - Servo endpoints, trim/subtrim, steering geometry, ESC settings
 
 ## Building and Flashing
 
@@ -115,12 +120,20 @@ If no calibration exists, the system automatically enters calibration mode on fi
 
 ## Operation
 
-### Status LED
+### Status LED (RGB)
 
-- **3 blinks** - System ready
-- **Solid on** - Running normally
-- **Blinking** - Calibration mode
-- **Off** - Failsafe (signal lost)
+The RGB WS2812 LED provides colorful status indication:
+
+| State | Effect | Color |
+| ----- | ------ | ------ |
+| Boot | Rainbow cycle | Multi |
+| Idle | Breathe | Cyan |
+| Running | Beacon | Orange |
+| Failsafe | Fast blink | Red |
+| Calibrating | Breathe | Yellow |
+| OTA Update | Pulse | Purple |
+| WiFi Connected | Double blink | Blue |
+| Error | Solid | Red |
 
 ### Serial Monitor Output
 
@@ -164,8 +177,8 @@ UI override takes priority. Click "Auto" in the web UI to let AUX switches contr
 **Mode 0 - Front (Axles 1-2)**
 
 ```
-     ↙ ↘      A1 - turns
-     ↙ ↘      A2 - turns
+     ↗ ↗      A1 - turns
+     ↗ ↗      A2 - turns
      | |      A3 - straight
      | |      A4 - straight
 ```
@@ -177,8 +190,8 @@ Like a normal car. Front axles turn, rear axles follow straight.
 ```
      | |      A1 - straight
      | |      A2 - straight
-     ↖ ↗      A3 - turns
-     ↖ ↗      A4 - turns
+     ↗ ↗      A3 - turns
+     ↗ ↗      A4 - turns
 ```
 
 Rear axles steer while front stays straight. Feels like driving in reverse.
@@ -186,13 +199,13 @@ Rear axles steer while front stays straight. Feels like driving in reverse.
 **Mode 2 - All Axle (Counter-steer)**
 
 ```
-     ↙ ↘      A1 - turns LEFT
-     ↙ ↘      A2 - turns LEFT
-     ↗ ↖      A3 - turns RIGHT (opposite)
-     ↗ ↖      A4 - turns RIGHT (opposite)
+     ↖ ↖      A1 - turns LEFT
+     ↖ ↖      A2 - turns LEFT
+     ↗ ↗      A3 - turns RIGHT (opposite)
+     ↗ ↗      A4 - turns RIGHT (opposite)
 ```
 
-Front and rear turn in opposite directions. Creates a very tight turning circle - vehicle pivots around its center.
+Front and rear turn in opposite directions. Creates a very tight turning circle.
 
 **Mode 3 - Crab**
 
@@ -205,48 +218,62 @@ Front and rear turn in opposite directions. Creates a very tight turning circle 
 
 All axles point the same direction. Vehicle moves sideways like a crab. Great for parallel parking.
 
-**Mode 4 - Spin**
+## Porting to Other ESP32 Variants
 
+### Supported Targets
+
+This project is configured for **ESP32-S3** but can be ported to other ESP32 variants:
+
+| Target | Support | Notes |
+| ------ | ------- | ----- |
+| ESP32-S3 | Full | Default target, tested |
+| ESP32 | Full | Change target and pins |
+| ESP32-S2 | Full | Single-core, works fine |
+| ESP32-C3 | Limited | Single MCPWM group, needs rework |
+
+**Requirements:**
+- **Flash**: 4MB minimum (for OTA dual partitions)
+- **MCPWM**: 2 groups preferred (1 for RC input + ESC, 1 for servos)
+- **RMT**: 1 channel for WS2812 LED
+- **Cores**: Single-core works fine but dual core is recommended
+
+### Changing Target
+
+1. Set the target:
+   ```bash
+   idf.py set-target esp32    # or esp32s2, esp32s3, etc.
+   ```
+
+2. Update `sdkconfig.defaults`:
+   ```
+   CONFIG_IDF_TARGET="esp32"
+   # Remove ESP32-S3 specific options like CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+   ```
+
+3. Update pin definitions in `main/config.h`
+
+### Pin Remapping
+
+All pins are defined in [main/config.h](main/config.h). To change pins:
+
+```c
+// RC Receiver Input Pins
+#define PIN_RC_STEERING     6   // Change to your GPIO
+#define PIN_RC_THROTTLE     5
+#define PIN_RC_AUX1         4
+#define PIN_RC_AUX2         3
+#define PIN_RC_AUX3         2
+#define PIN_RC_AUX4         1
+
+// ESC Output
+#define PIN_ESC             12
+
+// Servo Outputs
+#define PIN_SERVO_AXLE_1    8
+#define PIN_SERVO_AXLE_2    9
+#define PIN_SERVO_AXLE_3    10
+#define PIN_SERVO_AXLE_4    11
+
+// Status LED
+#define PIN_STATUS_LED      21
 ```
-     ↙ ↘      A1 - full turn
-     ↙ ↘      A2 - full turn
-     ↗ ↖      A3 - full opposite
-     ↗ ↖      A4 - full opposite
-```
-
-Same geometry as All Axle mode. With throttle, vehicle rotates in place like a tank.
-
-## Project Structure
-
-```
-├── main/
-│   ├── main.c           # Application entry and control loop
-│   ├── config.h         # Pin definitions and constants
-│   ├── nvs_storage.c/h  # Persistent storage for calibration
-│   ├── rc_input.c/h     # RC receiver signal capture
-│   ├── pwm_output.c/h   # ESC and servo PWM output
-│   ├── calibration.c/h  # Calibration system
-│   ├── web_server.c/h   # WiFi AP and HTTP/WebSocket server
-│   └── CMakeLists.txt   # Component build config
-├── web/
-│   ├── index.html       # Dashboard HTML
-│   ├── style.css        # Styling
-│   └── app.js           # WebSocket client
-├── partitions.csv       # Custom partition table (NVS + SPIFFS)
-└── CMakeLists.txt       # Project build config
-```
-
-## Future Features
-
-- [ ] Mode switching via aux channel
-- [ ] Expo/rates adjustment
-- [ ] Throttle limiting
-- [ ] Differential steering for tank mode
-- [ ] Telemetry output
-
-## Troubleshooting
-
-- **No signal**: Check RC receiver power and binding
-- **ESC not arming**: Calibrate ESC to match controller output range
-- **Erratic steering**: Run calibration, check servo connections
-- **Calibration fails**: Ensure full stick movement during endpoint phase
