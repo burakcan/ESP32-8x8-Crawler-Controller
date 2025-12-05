@@ -6,10 +6,9 @@
 #define FW_VERSION_MINOR 0
 #define FW_VERSION_PATCH 0
 
-// Build number - auto-generated from git commit count via CMake
-// FW_BUILD_NUMBER is defined by CMakeLists.txt as a compiler flag
-#ifndef FW_BUILD_NUMBER
-#define FW_BUILD_NUMBER 0
+// Build date - auto-generated via CMake (YYMMDD.HHMM format)
+#ifndef FW_BUILD_DATE
+#define FW_BUILD_DATE "000000.0000"
 #endif
 
 // Git hash - auto-generated via CMake

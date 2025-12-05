@@ -19,6 +19,9 @@
 #define WIFI_AP_CHANNEL     1
 #define WIFI_AP_MAX_CONN    4
 
+// mDNS hostname (accessible as 8x8-crawler.local)
+#define WIFI_MDNS_HOSTNAME  "8x8-crawler"
+
 /**
  * @brief Status data structure sent to web clients
  */
@@ -28,27 +31,33 @@ typedef struct {
     int16_t rc_steering;
     int16_t rc_aux1;
     int16_t rc_aux2;
-    
-    // Raw pulse widths (for debugging)
-    uint16_t rc_throttle_us;
-    uint16_t rc_steering_us;
-    
+    int16_t rc_aux3;
+    int16_t rc_aux4;
+
+    // Raw pulse widths (for debugging - all 6 channels)
+    uint16_t rc_raw[6];
+
     // Output values
     uint16_t esc_pulse;
     uint16_t servo_a1;   // Axle 1 (front)
     uint16_t servo_a2;   // Axle 2
     uint16_t servo_a3;   // Axle 3
     uint16_t servo_a4;   // Axle 4 (rear)
-    
+
     // System status
     uint8_t steering_mode;
     bool signal_lost;
     bool calibrated;
     bool calibrating;
     uint8_t cal_progress;
-    
-    // Uptime
-    uint32_t uptime_sec;
+
+    // Uptime (milliseconds)
+    uint32_t uptime_ms;
+
+    // System stats (for monitor page)
+    uint32_t heap_free;
+    uint32_t heap_min;
+    int8_t wifi_rssi;
 } web_status_t;
 
 /**
@@ -107,5 +116,42 @@ esp_err_t web_server_set_sta_config(bool enabled, const char *ssid, const char *
  * @param config Pointer to config structure to fill
  */
 void web_server_get_sta_config(crawler_wifi_config_t *config);
+
+/**
+ * @brief Check if servo test mode is active
+ * @return true if servo test mode is active (servos controlled from UI)
+ */
+bool web_server_is_servo_test_active(void);
+
+/**
+ * @brief Update servo test timeout (call from main loop)
+ * Automatically disables test mode after timeout
+ */
+void web_server_update_servo_test(void);
+
+/**
+ * @brief Enable WiFi (AP + optional STA)
+ * Call this when AUX3 switch is ON
+ */
+void web_server_wifi_enable(void);
+
+/**
+ * @brief Disable WiFi completely (saves power)
+ * Call this when AUX3 switch is OFF
+ */
+void web_server_wifi_disable(void);
+
+/**
+ * @brief Check if WiFi is currently enabled
+ * @return true if WiFi is running
+ */
+bool web_server_wifi_is_enabled(void);
+
+/**
+ * @brief Initialize web server without starting WiFi
+ * WiFi will be started later via web_server_wifi_enable()
+ * @return ESP_OK on success
+ */
+esp_err_t web_server_init_no_wifi(void);
 
 #endif // WEB_SERVER_H

@@ -67,4 +67,36 @@ esp_err_t nvs_load_wifi_config(crawler_wifi_config_t *config);
  */
 void nvs_get_default_wifi_config(crawler_wifi_config_t *config);
 
+/**
+ * @brief Save tuning configuration to NVS
+ * @param config Pointer to tuning config to save
+ * @return ESP_OK on success
+ */
+esp_err_t nvs_save_tuning(const tuning_config_t *config);
+
+/**
+ * @brief Load tuning configuration from NVS
+ * @param config Pointer to tuning config structure to fill
+ * @return ESP_OK on success, ESP_ERR_NOT_FOUND if no config saved
+ */
+esp_err_t nvs_load_tuning(tuning_config_t *config);
+
+/**
+ * @brief Save a blob to NVS
+ * @param key Key name
+ * @param data Pointer to data
+ * @param len Length of data
+ * @return ESP_OK on success
+ */
+esp_err_t nvs_storage_set_blob(const char *key, const void *data, size_t len);
+
+/**
+ * @brief Load a blob from NVS
+ * @param key Key name
+ * @param data Pointer to buffer for data
+ * @param len Pointer to length (in: buffer size, out: actual size)
+ * @return ESP_OK on success, ESP_ERR_NOT_FOUND if key doesn't exist
+ */
+esp_err_t nvs_storage_get_blob(const char *key, void *data, size_t *len);
+
 #endif // NVS_STORAGE_H

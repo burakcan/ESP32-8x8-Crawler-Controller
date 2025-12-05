@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include "driver/gpio.h"
 
 #include "config.h"
@@ -19,8 +20,11 @@
 #include "rc_input.h"
 #include "pwm_output.h"
 #include "calibration.h"
+#include "tuning.h"
 #include "web_server.h"
 #include "ota_update.h"
+#include "led_rgb.h"
+#include "udp_log.h"
 
 static const char *TAG = "MAIN";
 
@@ -35,18 +39,12 @@ typedef enum {
 static app_state_t app_state = APP_STATE_INIT;
 static steering_mode_t current_steering_mode = STEER_MODE_FRONT;
 
-// Status LED control
-static void status_led_init(void)
-{
-    gpio_reset_pin(PIN_STATUS_LED);
-    gpio_set_direction(PIN_STATUS_LED, GPIO_MODE_OUTPUT);
-    gpio_set_level(PIN_STATUS_LED, 0);
-}
-
-static void status_led_set(bool on)
-{
-    gpio_set_level(PIN_STATUS_LED, on ? 1 : 0);
-}
+// LED state tracking
+static led_state_t current_led_state = LED_STATE_BOOT;
+static bool wifi_sta_was_connected = false;  // Track WiFi STA state changes
+static uint32_t wifi_notify_until = 0;       // Show WiFi STA pattern until this loop count
+static uint32_t wifi_switch_notify_until = 0; // Show WiFi on/off pattern until this timestamp (ms)
+static bool wifi_switch_notify_on = false;    // true = show ON pattern, false = show OFF pattern
 
 /**
  * @brief Print startup banner
@@ -55,7 +53,7 @@ static void print_banner(void)
 {
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║     8x8 CRAWLER CONTROLLER v%s b%d    ║", FW_VERSION, FW_BUILD_NUMBER);
+    ESP_LOGI(TAG, "║   8x8 CRAWLER CONTROLLER v%s  %s  ║", FW_VERSION, FW_BUILD_DATE);
     ESP_LOGI(TAG, "╠══════════════════════════════════════════╣");
     ESP_LOGI(TAG, "║  RC Input:   GPIO %2d (throttle)          ║", PIN_RC_THROTTLE);
     ESP_LOGI(TAG, "║             GPIO %2d (steering)          ║", PIN_RC_STEERING);
@@ -74,50 +72,87 @@ static void print_banner(void)
 static void process_control_loop(void)
 {
     const calibration_data_t *cal = calibration_get_data();
-    
-    // Get calibrated channel values
-    rc_channel_data_t throttle_data, steering_data;
+
+    // Get RC input
+    rc_channel_data_t throttle_data, steering_data, aux1_data, aux2_data, aux3_data, aux4_data;
     rc_input_get_calibrated(RC_CH_THROTTLE, &cal->channels[RC_CH_THROTTLE], &throttle_data);
     rc_input_get_calibrated(RC_CH_STEERING, &cal->channels[RC_CH_STEERING], &steering_data);
-    
+    rc_input_get_calibrated(RC_CH_AUX1, &cal->channels[RC_CH_AUX1], &aux1_data);
+    rc_input_get_calibrated(RC_CH_AUX2, &cal->channels[RC_CH_AUX2], &aux2_data);
+    rc_input_get_calibrated(RC_CH_AUX3, &cal->channels[RC_CH_AUX3], &aux3_data);
+    rc_input_get_calibrated(RC_CH_AUX4, &cal->channels[RC_CH_AUX4], &aux4_data);
+
+    bool signal_lost = throttle_data.signal_lost || steering_data.signal_lost;
+
+    // AUX3 controls WiFi power (ON when switch is high)
+    static bool last_wifi_switch = false;
+    bool wifi_switch = (aux3_data.value > 200);  // High = WiFi ON
+
+    if (wifi_switch != last_wifi_switch) {
+        if (wifi_switch) {
+            web_server_wifi_enable();
+            // Initialize UDP logging when WiFi comes on
+            udp_log_init();
+            // Initialize OTA when WiFi comes on
+            ota_update_init();
+        } else {
+            web_server_wifi_disable();
+        }
+        // Set LED notification for 2 seconds
+        wifi_switch_notify_until = (uint32_t)(esp_timer_get_time() / 1000) + 2000;
+        wifi_switch_notify_on = wifi_switch;
+        last_wifi_switch = wifi_switch;
+    }
+
+    // AUX4 controls realistic throttle mode (ON when switch is high)
+    bool realistic_switch = (aux4_data.value > 200);
+    tuning_set_realistic_override(realistic_switch);
+
     // Check for signal loss
-    if (throttle_data.signal_lost || steering_data.signal_lost) {
+    if (signal_lost) {
         if (app_state != APP_STATE_FAILSAFE) {
             ESP_LOGW(TAG, "Signal lost! Entering failsafe mode");
             app_state = APP_STATE_FAILSAFE;
             esc_set_neutral();
             servo_center_all();
+            tuning_reset_realistic_throttle();  // Reset simulated velocity
         }
         return;
     }
-    
+
     // Recover from failsafe
     if (app_state == APP_STATE_FAILSAFE) {
         ESP_LOGI(TAG, "Signal recovered, resuming operation");
         app_state = APP_STATE_RUNNING;
     }
-    
+
+    // Apply throttle to ESC with tuning (limits, subtrim, deadzone, reverse)
+    uint16_t esc_pulse = tuning_calc_esc_pulse(throttle_data.value);
+    esc_set_pulse(esc_pulse);
+
+    // Apply steering expo curve
+    int16_t steer = tuning_apply_expo(steering_data.value);
+
+    // Apply speed-dependent steering reduction
+    steer = tuning_apply_speed_steering(steer);
+
     // Determine steering mode
-    // Priority: UI override > AUX switches
+    // Priority: UI override > RC AUX switches
     steering_mode_t new_mode;
     uint8_t ui_mode;
-    
+
     if (web_server_get_mode_override(&ui_mode)) {
         // UI has selected a mode
         new_mode = (steering_mode_t)ui_mode;
     } else {
-        // Use AUX switches
-        rc_channel_data_t aux1_data, aux2_data;
-        rc_input_get_calibrated(RC_CH_AUX1, &cal->channels[RC_CH_AUX1], &aux1_data);
-        rc_input_get_calibrated(RC_CH_AUX2, &cal->channels[RC_CH_AUX2], &aux2_data);
-        
+        // RC: Use AUX switch values
         // AUX1 OFF + AUX2 OFF = Front (normal)
         // AUX1 ON  + AUX2 OFF = All Axle (tight turns)
         // AUX1 OFF + AUX2 ON  = Crab (sideways)
         // AUX1 ON  + AUX2 ON  = Rear (rear axles steer)
         bool aux1_on = aux1_data.value > 200;
         bool aux2_on = aux2_data.value > 200;
-        
+
         if (!aux1_on && !aux2_on) {
             new_mode = STEER_MODE_FRONT;
         } else if (aux1_on && !aux2_on) {
@@ -128,64 +163,64 @@ static void process_control_loop(void)
             new_mode = STEER_MODE_REAR;
         }
     }
-    
+
     // Log mode changes
     if (new_mode != current_steering_mode) {
         const char *mode_names[] = {"Front", "Rear", "All-Axle", "Crab"};
-        ESP_LOGI(TAG, "Steering mode: %s", mode_names[new_mode]);
+        ESP_LOGI(TAG, "Steering mode: %s (steer=%d)", mode_names[new_mode], steer);
         current_steering_mode = new_mode;
     }
-    
-    // Apply throttle to ESC
-    esc_set_throttle(throttle_data.value);
-    
-    // Apply steering based on current mode
-    // Axles 1-2 are front pair, Axles 3-4 are rear pair
-    int16_t axle_1 = 0, axle_2 = 0, axle_3 = 0, axle_4 = 0;
-    int16_t steer = steering_data.value;
-    
+
+    // Calculate per-axle steering based on mode and axle ratios
+    int16_t axle_values[4] = {0, 0, 0, 0};
+
     switch (current_steering_mode) {
         case STEER_MODE_FRONT:
             // Axles 1-2 steer, 3-4 fixed (like a car)
-            axle_1 = steer;
-            axle_2 = steer;
-            axle_3 = 0;
-            axle_4 = 0;
+            axle_values[0] = (steer * tuning_get_axle_ratio(0, current_steering_mode)) / 100;
+            axle_values[1] = (steer * tuning_get_axle_ratio(1, current_steering_mode)) / 100;
+            axle_values[2] = 0;
+            axle_values[3] = 0;
             break;
-            
+
         case STEER_MODE_REAR:
             // Axles 3-4 steer, 1-2 fixed (reverse direction for intuitive control)
-            axle_1 = 0;
-            axle_2 = 0;
-            axle_3 = -steer;
-            axle_4 = -steer;
+            axle_values[0] = 0;
+            axle_values[1] = 0;
+            axle_values[2] = (-steer * tuning_get_axle_ratio(2, current_steering_mode)) / 100;
+            axle_values[3] = (-steer * tuning_get_axle_ratio(3, current_steering_mode)) / 100;
             break;
-            
+
         case STEER_MODE_ALL_AXLE:
             // All axles steer (1-2 opposite to 3-4 for tighter turning)
-            axle_1 = steer;
-            axle_2 = steer;
-            axle_3 = -steer;
-            axle_4 = -steer;
+            // Rear gets additional ratio reduction via tuning_get_axle_ratio
+            axle_values[0] = (steer * tuning_get_axle_ratio(0, current_steering_mode)) / 100;
+            axle_values[1] = (steer * tuning_get_axle_ratio(1, current_steering_mode)) / 100;
+            axle_values[2] = (-steer * tuning_get_axle_ratio(2, current_steering_mode)) / 100;
+            axle_values[3] = (-steer * tuning_get_axle_ratio(3, current_steering_mode)) / 100;
             break;
-            
+
         case STEER_MODE_CRAB:
-            // All axles same direction (crab walk / sideways)
-            axle_1 = steer;
-            axle_2 = steer;
-            axle_3 = steer;
-            axle_4 = steer;
+            // All axles same direction at 100% (crab walk / sideways)
+            // No ratios applied - all wheels must point the same direction
+            axle_values[0] = steer;
+            axle_values[1] = steer;
+            axle_values[2] = steer;
+            axle_values[3] = steer;
             break;
-            
+
         default:
             break;
     }
-    
-    // Set servo positions (one servo per axle)
-    servo_set_position(SERVO_AXLE_1, axle_1);
-    servo_set_position(SERVO_AXLE_2, axle_2);
-    servo_set_position(SERVO_AXLE_3, axle_3);
-    servo_set_position(SERVO_AXLE_4, axle_4);
+
+    // Set servo positions with tuning (endpoints, subtrim, trim, reverse)
+    // Skip if servo test mode is active (UI controls servos directly)
+    if (!web_server_is_servo_test_active()) {
+        for (int i = 0; i < SERVO_COUNT; i++) {
+            uint16_t pulse = tuning_calc_servo_pulse(i, axle_values[i]);
+            servo_set_pulse((servo_id_t)i, pulse);
+        }
+    }
 }
 
 /**
@@ -193,10 +228,14 @@ static void process_control_loop(void)
  */
 static void update_status(void)
 {
+    // Skip status updates if WiFi is off
+    if (!web_server_wifi_is_enabled()) {
+        return;
+    }
+
     static uint32_t last_update = 0;
-    static uint32_t last_serial = 0;
     uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    
+
     // Update web UI at 10Hz
     if (now - last_update < 100) {
         return;
@@ -210,18 +249,22 @@ static void update_status(void)
         rc_input_get_calibrated((rc_channel_t)i, &cal->channels[i], &ch[i]);
     }
     
-    // Get calibration status
-    calibration_status_t cal_status;
-    calibration_get_status(&cal_status);
-    
     // Build web status
     web_status_t web_status = {
         .rc_throttle = ch[RC_CH_THROTTLE].value,
         .rc_steering = ch[RC_CH_STEERING].value,
         .rc_aux1 = ch[RC_CH_AUX1].value,
         .rc_aux2 = ch[RC_CH_AUX2].value,
-        .rc_throttle_us = ch[RC_CH_THROTTLE].pulse_us,
-        .rc_steering_us = ch[RC_CH_STEERING].pulse_us,
+        .rc_aux3 = ch[RC_CH_AUX3].value,
+        .rc_aux4 = ch[RC_CH_AUX4].value,
+        .rc_raw = {
+            ch[RC_CH_THROTTLE].pulse_us,
+            ch[RC_CH_STEERING].pulse_us,
+            ch[RC_CH_AUX1].pulse_us,
+            ch[RC_CH_AUX2].pulse_us,
+            ch[RC_CH_AUX3].pulse_us,
+            ch[RC_CH_AUX4].pulse_us
+        },
         .esc_pulse = esc_get_pulse(),
         .servo_a1 = servo_get_pulse(SERVO_AXLE_1),
         .servo_a2 = servo_get_pulse(SERVO_AXLE_2),
@@ -231,23 +274,14 @@ static void update_status(void)
         .signal_lost = ch[RC_CH_THROTTLE].signal_lost,
         .calibrated = calibration_is_valid(),
         .calibrating = calibration_in_progress(),
-        .cal_progress = cal_status.progress_percent,
-        .uptime_sec = now / 1000
+        .cal_progress = 0,  // No longer used - calibration is step-based now
+        .uptime_ms = now,
+        .heap_free = esp_get_free_heap_size(),
+        .heap_min = esp_get_minimum_free_heap_size(),
+        .wifi_rssi = 0  // TODO: Get actual RSSI if connected to STA
     };
     
     web_server_update_status(&web_status);
-    
-    // Print to serial less frequently (every 2 seconds)
-    if (now - last_serial >= 2000) {
-        last_serial = now;
-        if (!ch[RC_CH_THROTTLE].signal_lost) {
-            ESP_LOGI(TAG, "THR:%+5d STR:%+5d | ESC:%4d | Mode:%d",
-                     ch[RC_CH_THROTTLE].value,
-                     ch[RC_CH_STEERING].value,
-                     esc_get_pulse(),
-                     current_steering_mode);
-        }
-    }
 }
 
 /**
@@ -262,8 +296,10 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_storage_init());
     
     // Initialize status LED
-    status_led_init();
-    
+    // Initialize RGB LED (shows rainbow boot animation)
+    ESP_LOGI(TAG, "Initializing RGB LED...");
+    ESP_ERROR_CHECK(led_rgb_init());
+
     // Initialize RC input capture
     ESP_LOGI(TAG, "Initializing RC input...");
     ESP_ERROR_CHECK(rc_input_init());
@@ -276,22 +312,25 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing calibration...");
     calibration_data_t cal_data;
     ESP_ERROR_CHECK(calibration_init(&cal_data));
-    
-    // Initialize web server (WiFi AP + HTTP)
-    ESP_LOGI(TAG, "Initializing web server...");
-    ESP_ERROR_CHECK(web_server_init());
 
-    // Initialize OTA update module
-    ESP_LOGI(TAG, "Initializing OTA update...");
-    ESP_ERROR_CHECK(ota_update_init());
+    // Initialize tuning system (loads from NVS or defaults)
+    ESP_LOGI(TAG, "Initializing tuning...");
+    ESP_ERROR_CHECK(tuning_init(NULL));
+
+    // Initialize web server (WiFi OFF by default - controlled by AUX3)
+    ESP_LOGI(TAG, "Initializing web server (WiFi OFF)...");
+    ESP_ERROR_CHECK(web_server_init_no_wifi());
+
+    // OTA update module (initialized when WiFi is enabled)
+    // Note: OTA only works when WiFi is on
 
     // Mark this firmware as valid (cancels automatic rollback)
-    // This should be called after all critical init is successful
     ota_mark_valid();
 
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  Web UI: http://%s              ║", web_server_get_ip());
+    ESP_LOGI(TAG, "║  WiFi OFF by default (save power)        ║");
+    ESP_LOGI(TAG, "║  Flip AUX3 switch ON to enable WiFi      ║");
     ESP_LOGI(TAG, "║  WiFi:   %s / %s         ║", WIFI_AP_SSID, WIFI_AP_PASS);
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
@@ -303,84 +342,113 @@ void app_main(void)
     // Brief delay to let RC receiver boot
     ESP_LOGI(TAG, "Waiting for RC signal...");
     vTaskDelay(pdMS_TO_TICKS(1000));
-    
-    // Check for calibration trigger (sticks in corners)
-    bool need_calibration = false;
-    
+
+    // Check calibration status
     if (!calibration_is_valid()) {
-        ESP_LOGW(TAG, "No valid calibration found!");
-        need_calibration = true;
-    } else if (calibration_check_trigger()) {
-        ESP_LOGI(TAG, "Calibration trigger detected!");
-        need_calibration = true;
+        ESP_LOGW(TAG, "No valid calibration - use web UI to calibrate");
     }
-    
-    if (need_calibration) {
-        ESP_LOGI(TAG, "Entering calibration mode...");
-        app_state = APP_STATE_CALIBRATING;
-        calibration_start();
-    } else {
-        ESP_LOGI(TAG, "Starting normal operation...");
-        app_state = APP_STATE_RUNNING;
-    }
-    
+
+    ESP_LOGI(TAG, "Starting normal operation...");
+    app_state = APP_STATE_RUNNING;
+
+    // Initialize Task Watchdog Timer (5 second timeout)
+    // This will reset the device if the main loop hangs
+    ESP_LOGI(TAG, "Initializing watchdog timer...");
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = 5000,
+        .idle_core_mask = 0,  // Don't watch idle tasks
+        .trigger_panic = true  // Reset on timeout
+    };
+    ESP_ERROR_CHECK(esp_task_wdt_reconfigure(&wdt_config));
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));  // Add current task to watchdog
+
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║            SYSTEM READY                  ║");
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
     
-    // Blink LED to indicate ready
-    for (int i = 0; i < 3; i++) {
-        status_led_set(true);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        status_led_set(false);
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    
     // Main control loop
     uint32_t loop_count = 0;
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t loop_period_ticks = pdMS_TO_TICKS(MAIN_LOOP_PERIOD_MS);
+
     while (1) {
-        uint32_t loop_start = (uint32_t)(esp_timer_get_time() / 1000);
-        
-        if (app_state == APP_STATE_CALIBRATING) {
-            // Update calibration state machine
+        // Check if calibration is running (can be started via web UI)
+        bool calibrating = calibration_in_progress();
+
+        if (calibrating) {
+            // Update calibration to read current pulse values
             calibration_update();
-            
-            // Blink LED during calibration
-            status_led_set((loop_count / 10) % 2);
-            
-            // Check if calibration finished
-            if (!calibration_in_progress()) {
-                calibration_status_t status;
-                calibration_get_status(&status);
-                
-                if (status.state == CAL_STATE_COMPLETE) {
-                    ESP_LOGI(TAG, "Calibration complete! Starting normal operation...");
-                    app_state = APP_STATE_RUNNING;
-                } else if (status.state == CAL_STATE_FAILED) {
-                    ESP_LOGE(TAG, "Calibration failed: %s", status.status_message);
-                    ESP_LOGI(TAG, "Using default calibration values...");
-                    app_state = APP_STATE_RUNNING;
-                }
-            }
+            app_state = APP_STATE_CALIBRATING;
         } else {
+            // Check if we just finished calibration
+            if (app_state == APP_STATE_CALIBRATING) {
+                ESP_LOGI(TAG, "Calibration finished, resuming normal operation");
+                app_state = APP_STATE_RUNNING;
+            }
+
             // Normal operation
             process_control_loop();
-            
-            // Solid LED when running, off in failsafe
-            status_led_set(app_state == APP_STATE_RUNNING);
         }
-        
-        // Update web UI (runs in all states)
-        update_status();
-        
-        // Maintain consistent loop timing
-        uint32_t loop_time = (uint32_t)(esp_timer_get_time() / 1000) - loop_start;
-        if (loop_time < MAIN_LOOP_PERIOD_MS) {
-            vTaskDelay(pdMS_TO_TICKS(MAIN_LOOP_PERIOD_MS - loop_time));
+
+        // Check for WiFi STA connection state change (only if WiFi enabled)
+        if (web_server_wifi_is_enabled()) {
+            bool wifi_connected = web_server_is_sta_connected();
+            if (wifi_connected && !wifi_sta_was_connected) {
+                // Just connected - show notification for 2 seconds (200 loops)
+                wifi_notify_until = loop_count + 200;
+            }
+            wifi_sta_was_connected = wifi_connected;
         }
-        
+
+        // Update LED state based on system state (priority order)
+        led_state_t new_led_state = LED_STATE_IDLE;
+        ota_progress_t ota = ota_get_progress();
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+
+        if (ota.status == OTA_STATUS_IN_PROGRESS) {
+            new_led_state = LED_STATE_OTA;
+        } else if (app_state == APP_STATE_CALIBRATING) {
+            new_led_state = LED_STATE_CALIBRATING;
+        } else if (app_state == APP_STATE_FAILSAFE) {
+            new_led_state = LED_STATE_FAILSAFE;
+        } else if (now_ms < wifi_switch_notify_until) {
+            // WiFi switch changed - show on/off notification
+            new_led_state = wifi_switch_notify_on ? LED_STATE_WIFI_ON : LED_STATE_WIFI_OFF;
+        } else if (loop_count < wifi_notify_until) {
+            // WiFi STA just connected
+            new_led_state = LED_STATE_WIFI_CONNECTED;
+        } else if (app_state == APP_STATE_RUNNING) {
+            new_led_state = LED_STATE_RUNNING;
+        } else {
+            new_led_state = LED_STATE_IDLE;
+        }
+
+        // Only update state if changed (prevents resetting animations)
+        if (new_led_state != current_led_state) {
+            current_led_state = new_led_state;
+            led_rgb_set_state(new_led_state);
+        }
+
+        // Update LED animation
+        led_rgb_update();
+
+        // Only update web server stuff if WiFi is on
+        if (web_server_wifi_is_enabled()) {
+            // Update servo test mode timeout
+            web_server_update_servo_test();
+
+            // Update web UI
+            update_status();
+        }
+
+        // Feed watchdog to prevent reset
+        esp_task_wdt_reset();
+
+        // Maintain consistent loop timing (compensates for execution time)
+        vTaskDelayUntil(&last_wake_time, loop_period_ticks);
+
         loop_count++;
     }
 }
