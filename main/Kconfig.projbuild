@@ -1,0 +1,86 @@
+menu "8x8 Crawler Configuration"
+
+    menu "RC Input Pins"
+        config RC_THROTTLE_GPIO
+            int "Throttle channel GPIO"
+            range 0 39
+            default 34
+            help
+                GPIO for RC throttle channel input.
+
+        config RC_STEERING_GPIO
+            int "Steering channel GPIO"
+            range 0 39
+            default 35
+            help
+                GPIO for RC steering channel input.
+
+        config RC_AUX1_GPIO
+            int "Aux1 channel GPIO"
+            range 0 39
+            default 32
+            help
+                GPIO for RC aux1 channel input.
+
+        config RC_AUX2_GPIO
+            int "Aux2 channel GPIO"
+            range 0 39
+            default 33
+            help
+                GPIO for RC aux2 channel input.
+    endmenu
+
+    menu "Output Pins"
+        config ESC_GPIO
+            int "ESC signal GPIO"
+            range 0 33
+            default 18
+            help
+                GPIO for ESC PWM output.
+
+        config SERVO_AXLE_1_GPIO
+            int "Axle 1 (front) servo GPIO"
+            range 0 33
+            default 19
+            help
+                GPIO for axle 1 (front) steering servo.
+
+        config SERVO_AXLE_2_GPIO
+            int "Axle 2 servo GPIO"
+            range 0 33
+            default 21
+            help
+                GPIO for axle 2 steering servo.
+
+        config SERVO_AXLE_3_GPIO
+            int "Axle 3 servo GPIO"
+            range 0 33
+            default 22
+            help
+                GPIO for axle 3 steering servo.
+
+        config SERVO_AXLE_4_GPIO
+            int "Axle 4 (rear) servo GPIO"
+            range 0 33
+            default 23
+            help
+                GPIO for axle 4 (rear) steering servo.
+    endmenu
+
+    menu "Signal Parameters"
+        config RC_SIGNAL_TIMEOUT_MS
+            int "RC signal timeout (ms)"
+            range 100 1000
+            default 250
+            help
+                Time in milliseconds before declaring RC signal lost.
+
+        config DEFAULT_DEADZONE_US
+            int "Default deadzone (microseconds)"
+            range 0 100
+            default 20
+            help
+                Default deadzone around center position.
+    endmenu
+
+endmenu
