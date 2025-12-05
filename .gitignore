@@ -1,0 +1,30 @@
+# Build output
+build/
+
+# Generated config (use sdkconfig.defaults instead)
+sdkconfig
+sdkconfig.old
+
+# ESP-IDF managed components
+managed_components/
+dependencies.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.log
+

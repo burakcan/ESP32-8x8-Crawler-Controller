@@ -1,0 +1,23 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "nvs_storage.c"
+        "rc_input.c"
+        "pwm_output.c"
+        "calibration.c"
+        "web_server.c"
+        "ota_update.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        driver
+        esp_driver_mcpwm
+        nvs_flash
+        esp_timer
+        esp_wifi
+        esp_http_server
+        esp_netif
+        esp_event
+        spiffs
+        app_update
+        esp_app_format
+)
