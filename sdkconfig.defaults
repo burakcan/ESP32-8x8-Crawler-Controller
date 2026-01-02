@@ -14,8 +14,8 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # Enable HTTP server WebSocket support
 CONFIG_HTTPD_WS_SUPPORT=y
 
-# ESP32-S3 specific: USB CDC for console (if using USB port)
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# ESP32-S3 specific: Use USB CDC for console (frees GPIO 43/44 for other uses)
+CONFIG_ESP_CONSOLE_USB_CDC=y
 
 # ESP32-S3 specific: Enable RMT for WS2812 RGB LED
 CONFIG_RMT_ISR_IRAM_SAFE=y

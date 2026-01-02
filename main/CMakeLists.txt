@@ -26,11 +26,13 @@ idf_component_register(
         "ota_update.c"
         "led_rgb.c"
         "udp_log.c"
+        "sound.c"
     INCLUDE_DIRS "."
     REQUIRES
         driver
         esp_driver_mcpwm
         esp_driver_rmt
+        esp_driver_i2s
         nvs_flash
         esp_timer
         esp_wifi
