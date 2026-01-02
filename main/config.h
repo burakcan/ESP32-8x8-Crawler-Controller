@@ -45,6 +45,12 @@
 #define PIN_STATUS_LED      21  // RGB LED on ESP32-S3 Mini
 #define STATUS_LED_IS_RGB   1   // Flag indicating RGB LED (WS2812)
 
+// I2S Audio Output (MAX98357A amplifier)
+#define PIN_I2S_BCLK        13  // Bit clock
+#define PIN_I2S_LRC         7   // Left/Right clock (Word Select)
+#define PIN_I2S_DOUT        44  // Data out (RX pin on ESP32-S3-Zero)
+// Note: SD pin should be tied to 3.3V to enable amp (or use GPIO for mute control)
+
 // ============================================================================
 // RC SIGNAL PARAMETERS
 // ============================================================================

@@ -25,6 +25,7 @@
 #include "ota_update.h"
 #include "led_rgb.h"
 #include "udp_log.h"
+#include "sound.h"
 
 static const char *TAG = "MAIN";
 
@@ -300,6 +301,10 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing RGB LED...");
     ESP_ERROR_CHECK(led_rgb_init());
 
+    // Initialize sound system
+    ESP_LOGI(TAG, "Initializing sound system...");
+    ESP_ERROR_CHECK(sound_init());
+
     // Initialize RC input capture
     ESP_LOGI(TAG, "Initializing RC input...");
     ESP_ERROR_CHECK(rc_input_init());
@@ -367,7 +372,10 @@ void app_main(void)
     ESP_LOGI(TAG, "║            SYSTEM READY                  ║");
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
-    
+
+    // Play boot chime to indicate system is ready
+    sound_play_boot_chime();
+
     // Main control loop
     uint32_t loop_count = 0;
     TickType_t last_wake_time = xTaskGetTickCount();
