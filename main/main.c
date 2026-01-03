@@ -26,6 +26,7 @@
 #include "led_rgb.h"
 #include "udp_log.h"
 #include "sound.h"
+#include "engine_sound.h"
 
 static const char *TAG = "MAIN";
 
@@ -85,25 +86,54 @@ static void process_control_loop(void)
 
     bool signal_lost = throttle_data.signal_lost || steering_data.signal_lost;
 
-    // AUX3 controls WiFi power (ON when switch is high)
-    static bool last_wifi_switch = false;
-    bool wifi_switch = (aux3_data.value > 200);  // High = WiFi ON
+    // AUX3 momentary button handling:
+    // - Short press (<5s): Toggle engine ignition
+    // - Long press (>=5s): Toggle WiFi
+    static bool aux3_was_pressed = false;
+    static int64_t aux3_press_time = 0;
+    static bool aux3_long_press_handled = false;
+    static bool wifi_enabled = false;
 
-    if (wifi_switch != last_wifi_switch) {
-        if (wifi_switch) {
-            web_server_wifi_enable();
-            // Initialize UDP logging when WiFi comes on
-            udp_log_init();
-            // Initialize OTA when WiFi comes on
-            ota_update_init();
-        } else {
-            web_server_wifi_disable();
+    bool aux3_pressed = (aux3_data.value > 200);  // Button is currently pressed
+    int64_t now_ms = esp_timer_get_time() / 1000;
+
+    if (aux3_pressed && !aux3_was_pressed) {
+        // Button just pressed - record time
+        aux3_press_time = now_ms;
+        aux3_long_press_handled = false;
+    } else if (aux3_pressed && aux3_was_pressed) {
+        // Button being held - check for long press (5 seconds)
+        if (!aux3_long_press_handled && (now_ms - aux3_press_time) >= 5000) {
+            // Long press detected - toggle WiFi
+            aux3_long_press_handled = true;
+            wifi_enabled = !wifi_enabled;
+
+            if (wifi_enabled) {
+                sound_play(SOUND_WIFI_ON);
+                web_server_wifi_enable();
+                udp_log_init();
+                ota_update_init();
+            } else {
+                sound_play(SOUND_WIFI_OFF);
+                web_server_wifi_disable();
+            }
+
+            // Set LED notification for 2 seconds
+            wifi_switch_notify_until = (uint32_t)now_ms + 2000;
+            wifi_switch_notify_on = wifi_enabled;
         }
-        // Set LED notification for 2 seconds
-        wifi_switch_notify_until = (uint32_t)(esp_timer_get_time() / 1000) + 2000;
-        wifi_switch_notify_on = wifi_switch;
-        last_wifi_switch = wifi_switch;
+    } else if (!aux3_pressed && aux3_was_pressed) {
+        // Button just released
+        if (!aux3_long_press_handled) {
+            // Short press - toggle engine ignition
+            if (engine_sound_get_state() == ENGINE_OFF) {
+                engine_sound_start();
+            } else {
+                engine_sound_stop();
+            }
+        }
     }
+    aux3_was_pressed = aux3_pressed;
 
     // AUX4 controls realistic throttle mode (ON when switch is high)
     bool realistic_switch = (aux4_data.value > 200);
@@ -130,6 +160,9 @@ static void process_control_loop(void)
     // Apply throttle to ESC with tuning (limits, subtrim, deadzone, reverse)
     uint16_t esc_pulse = tuning_calc_esc_pulse(throttle_data.value);
     esc_set_pulse(esc_pulse);
+
+    // Update engine sound based on throttle and simulated velocity
+    engine_sound_update(throttle_data.value, tuning_get_simulated_velocity());
 
     // Apply steering expo curve
     int16_t steer = tuning_apply_expo(steering_data.value);
@@ -305,6 +338,10 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing sound system...");
     ESP_ERROR_CHECK(sound_init());
 
+    // Initialize engine sound system
+    ESP_LOGI(TAG, "Initializing engine sound...");
+    ESP_ERROR_CHECK(engine_sound_init());
+
     // Initialize RC input capture
     ESP_LOGI(TAG, "Initializing RC input...");
     ESP_ERROR_CHECK(rc_input_init());
@@ -322,7 +359,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing tuning...");
     ESP_ERROR_CHECK(tuning_init(NULL));
 
-    // Initialize web server (WiFi OFF by default - controlled by AUX3)
+    // Initialize web server (WiFi OFF by default - hold AUX3 5sec to enable)
     ESP_LOGI(TAG, "Initializing web server (WiFi OFF)...");
     ESP_ERROR_CHECK(web_server_init_no_wifi());
 
@@ -334,8 +371,9 @@ void app_main(void)
 
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  WiFi OFF by default (save power)        ║");
-    ESP_LOGI(TAG, "║  Flip AUX3 switch ON to enable WiFi      ║");
+    ESP_LOGI(TAG, "║  AUX3 Button Controls:                   ║");
+    ESP_LOGI(TAG, "║    Short press = Engine ignition         ║");
+    ESP_LOGI(TAG, "║    Hold 5 sec  = WiFi toggle             ║");
     ESP_LOGI(TAG, "║  WiFi:   %s / %s         ║", WIFI_AP_SSID, WIFI_AP_PASS);
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
@@ -375,6 +413,8 @@ void app_main(void)
 
     // Play boot chime to indicate system is ready
     sound_play_boot_chime();
+
+    // Engine starts OFF - user can start it with AUX3 short press
 
     // Main control loop
     uint32_t loop_count = 0;

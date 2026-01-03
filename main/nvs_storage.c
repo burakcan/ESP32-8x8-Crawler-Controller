@@ -314,3 +314,55 @@ esp_err_t nvs_storage_get_blob(const char *key, void *data, size_t *len)
 
     return ret;
 }
+
+esp_err_t nvs_save_sound_config(const void *config, size_t len)
+{
+    nvs_handle_t handle;
+    esp_err_t ret;
+
+    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = nvs_set_blob(handle, NVS_KEY_SOUND, config, len);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write sound config: %s", esp_err_to_name(ret));
+        nvs_close(handle);
+        return ret;
+    }
+
+    ret = nvs_commit(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Sound config saved to NVS");
+    }
+
+    nvs_close(handle);
+    return ret;
+}
+
+esp_err_t nvs_load_sound_config(void *config, size_t *len)
+{
+    nvs_handle_t handle;
+    esp_err_t ret;
+
+    ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = nvs_get_blob(handle, NVS_KEY_SOUND, config, len);
+    nvs_close(handle);
+
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "No sound config found in NVS");
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "Sound config loaded from NVS");
+    return ESP_OK;
+}

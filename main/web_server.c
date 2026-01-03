@@ -10,6 +10,7 @@
 #include "tuning.h"
 #include "calibration.h"
 #include "pwm_output.h"
+#include "engine_sound.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -43,8 +44,16 @@ static esp_netif_t *ap_netif = NULL;
 static int sta_retry_count = 0;
 static bool sta_give_up = false;
 static uint8_t sta_disconnect_reason = 0;
+static esp_timer_handle_t sta_connect_timer = NULL;
 #define STA_MAX_RETRY 5
 #define STA_RETRY_DELAY_MS 5000
+#define STA_INITIAL_DELAY_MS 2000
+
+// Timer callback for delayed WiFi connect (avoids blocking event loop)
+static void sta_connect_timer_cb(void *arg) {
+    ESP_LOGI(TAG, "WiFi STA: connecting now...");
+    esp_wifi_connect();
+}
 
 // UI mode override
 static bool ui_mode_override = false;
@@ -189,12 +198,18 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 ws_fd = -1;
                 break;
             case WIFI_EVENT_STA_START:
-                ESP_LOGI(TAG, "WiFi STA: started, connecting in 2s...");
+                ESP_LOGI(TAG, "WiFi STA: started, connecting in %dms...", STA_INITIAL_DELAY_MS);
                 sta_retry_count = 0;
                 sta_give_up = false;
-                // Delay first connection attempt to let WiFi stack stabilize
-                vTaskDelay(pdMS_TO_TICKS(2000));
-                esp_wifi_connect();
+                // Use timer to delay first connection (don't block event loop!)
+                if (sta_connect_timer == NULL) {
+                    esp_timer_create_args_t timer_args = {
+                        .callback = sta_connect_timer_cb,
+                        .name = "sta_connect"
+                    };
+                    esp_timer_create(&timer_args, &sta_connect_timer);
+                }
+                esp_timer_start_once(sta_connect_timer, STA_INITIAL_DELAY_MS * 1000);
                 break;
             case WIFI_EVENT_STA_DISCONNECTED: {
                 wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
@@ -209,9 +224,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                     if (sta_retry_count <= STA_MAX_RETRY) {
                         ESP_LOGI(TAG, "WiFi STA: retry %d/%d in %dms...",
                                  sta_retry_count, STA_MAX_RETRY, STA_RETRY_DELAY_MS);
-                        // Delay before retry to not block AP
-                        vTaskDelay(pdMS_TO_TICKS(STA_RETRY_DELAY_MS));
-                        esp_wifi_connect();
+                        // Use timer for retry delay (don't block event loop!)
+                        if (sta_connect_timer != NULL) {
+                            esp_timer_start_once(sta_connect_timer, STA_RETRY_DELAY_MS * 1000);
+                        }
                     } else {
                         ESP_LOGW(TAG, "WiFi STA: max retries reached, giving up. "
                                  "Will retry when credentials are updated.");
@@ -784,6 +800,150 @@ static esp_err_t tuning_reset_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// ============================================================================
+// Sound Settings Handlers
+// ============================================================================
+
+/**
+ * @brief Sound GET handler - returns current sound config as JSON
+ */
+static esp_err_t sound_get_handler(httpd_req_t *req)
+{
+    const engine_sound_config_t *cfg = engine_sound_get_config();
+    sound_profile_t profile = engine_sound_get_profile();
+    const char *profile_name = sound_profiles_get_name(profile);
+
+    // Build JSON response
+    char response[512];
+    snprintf(response, sizeof(response),
+        "{"
+        "\"profile\":%d,"
+        "\"profileName\":\"%s\","
+        "\"masterVolume\":%d,"
+        "\"idleVolume\":%d,"
+        "\"revVolume\":%d,"
+        "\"knockVolume\":%d,"
+        "\"startVolume\":%d,"
+        "\"maxRpmPercent\":%d,"
+        "\"acceleration\":%d,"
+        "\"deceleration\":%d,"
+        "\"revSwitchPoint\":%d,"
+        "\"idleEndPoint\":%d,"
+        "\"knockStartPoint\":%d,"
+        "\"knockInterval\":%d,"
+        "\"jakeBrakeEnabled\":%s,"
+        "\"v8Mode\":%s,"
+        "\"enabled\":%s,"
+        "\"rpm\":%d"
+        "}",
+        profile,
+        profile_name,
+        cfg->master_volume,
+        cfg->idle_volume,
+        cfg->rev_volume,
+        cfg->knock_volume,
+        cfg->start_volume,
+        cfg->max_rpm_percentage,
+        cfg->acceleration,
+        cfg->deceleration,
+        cfg->rev_switch_point,
+        cfg->idle_end_point,
+        cfg->knock_start_point,
+        cfg->knock_interval,
+        cfg->jake_brake_enabled ? "true" : "false",
+        cfg->v8_mode ? "true" : "false",
+        engine_sound_is_enabled() ? "true" : "false",
+        engine_sound_get_rpm()
+    );
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, response);
+    return ESP_OK;
+}
+
+/**
+ * @brief Sound POST handler - updates sound config
+ */
+static esp_err_t sound_post_handler(httpd_req_t *req)
+{
+    char buf[512];
+    int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (received <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
+        return ESP_FAIL;
+    }
+    buf[received] = '\0';
+
+    ESP_LOGI(TAG, "Sound config update: %s", buf);
+
+    // Get current config and update it
+    engine_sound_config_t cfg;
+    memcpy(&cfg, engine_sound_get_config(), sizeof(engine_sound_config_t));
+
+    int val;
+    bool bval;
+
+    // Parse sound settings
+    if (parse_json_int(buf, "profile", &val)) {
+        // Profile change - apply it
+        if (val >= 0 && val < SOUND_PROFILE_COUNT) {
+            engine_sound_set_profile((sound_profile_t)val);
+            cfg.profile = (sound_profile_t)val;
+        }
+    }
+    if (parse_json_int(buf, "masterVolume", &val)) cfg.master_volume = val;
+    if (parse_json_int(buf, "idleVolume", &val)) cfg.idle_volume = val;
+    if (parse_json_int(buf, "revVolume", &val)) cfg.rev_volume = val;
+    if (parse_json_int(buf, "knockVolume", &val)) cfg.knock_volume = val;
+    if (parse_json_int(buf, "startVolume", &val)) cfg.start_volume = val;
+    if (parse_json_int(buf, "maxRpmPercent", &val)) cfg.max_rpm_percentage = val;
+    if (parse_json_int(buf, "acceleration", &val)) cfg.acceleration = val;
+    if (parse_json_int(buf, "deceleration", &val)) cfg.deceleration = val;
+    if (parse_json_int(buf, "revSwitchPoint", &val)) cfg.rev_switch_point = val;
+    if (parse_json_int(buf, "idleEndPoint", &val)) cfg.idle_end_point = val;
+    if (parse_json_int(buf, "knockStartPoint", &val)) cfg.knock_start_point = val;
+    if (parse_json_int(buf, "knockInterval", &val)) cfg.knock_interval = val;
+    if (parse_json_bool(buf, "jakeBrakeEnabled", &bval)) cfg.jake_brake_enabled = bval;
+    if (parse_json_bool(buf, "v8Mode", &bval)) cfg.v8_mode = bval;
+    if (parse_json_bool(buf, "enabled", &bval)) engine_sound_enable(bval);
+
+    // Apply configuration
+    engine_sound_set_config(&cfg);
+
+    // Save to NVS
+    nvs_save_sound_config(&cfg, sizeof(engine_sound_config_t));
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+
+/**
+ * @brief Sound profiles GET handler - returns list of available profiles
+ */
+static esp_err_t sound_profiles_handler(httpd_req_t *req)
+{
+    char response[512];
+    int len = 0;
+
+    len += snprintf(response + len, sizeof(response) - len, "{\"profiles\":[");
+
+    for (int i = 0; i < SOUND_PROFILE_COUNT; i++) {
+        const sound_profile_def_t *profile = sound_profiles_get(i);
+        if (i > 0) len += snprintf(response + len, sizeof(response) - len, ",");
+        len += snprintf(response + len, sizeof(response) - len,
+            "{\"id\":%d,\"name\":\"%s\",\"description\":\"%s\",\"cylinders\":%d,\"hasJakeBrake\":%s}",
+            i, profile->name, profile->description, profile->cylinder_count,
+            profile->has_jake_brake ? "true" : "false");
+    }
+
+    len += snprintf(response + len, sizeof(response) - len, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, response);
+    return ESP_OK;
+}
+
 /**
  * @brief Build calibration JSON response
  */
@@ -1131,6 +1291,33 @@ static esp_err_t start_webserver(void)
     };
     httpd_register_uri_handler(server, &servo_post);
 
+    // Sound API - GET
+    httpd_uri_t sound_get = {
+        .uri = "/api/sound",
+        .method = HTTP_GET,
+        .handler = sound_get_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &sound_get);
+
+    // Sound API - POST
+    httpd_uri_t sound_post = {
+        .uri = "/api/sound",
+        .method = HTTP_POST,
+        .handler = sound_post_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &sound_post);
+
+    // Sound profiles API - GET
+    httpd_uri_t sound_profiles = {
+        .uri = "/api/sound/profiles",
+        .method = HTTP_GET,
+        .handler = sound_profiles_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &sound_profiles);
+
     // Static file handler (wildcard for all other requests)
     httpd_uri_t file = {
         .uri = "/*",
@@ -1393,6 +1580,11 @@ void web_server_wifi_disable(void)
 
     ESP_LOGI(TAG, "Disabling WiFi to save power...");
 
+    // Cancel any pending STA connection timer
+    if (sta_connect_timer != NULL) {
+        esp_timer_stop(sta_connect_timer);
+    }
+
     // Stop WiFi completely (turns off radio)
     esp_wifi_stop();
 
@@ -1431,6 +1623,6 @@ esp_err_t web_server_init_no_wifi(void)
     wifi_enabled = false;
     wifi_initialized = false;
 
-    ESP_LOGI(TAG, "Web server initialized (WiFi OFF - use AUX3 to enable)");
+    ESP_LOGI(TAG, "Web server initialized (WiFi OFF - hold AUX3 5sec to enable)");
     return ESP_OK;
 }

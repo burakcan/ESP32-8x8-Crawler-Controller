@@ -131,13 +131,13 @@ void web_server_update_servo_test(void);
 
 /**
  * @brief Enable WiFi (AP + optional STA)
- * Call this when AUX3 switch is ON
+ * Called when AUX3 button is held for 5 seconds
  */
 void web_server_wifi_enable(void);
 
 /**
  * @brief Disable WiFi completely (saves power)
- * Call this when AUX3 switch is OFF
+ * Called when AUX3 button is held for 5 seconds while WiFi is on
  */
 void web_server_wifi_disable(void);
 

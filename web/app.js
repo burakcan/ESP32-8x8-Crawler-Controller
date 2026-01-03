@@ -5,6 +5,7 @@ import { DashboardPage } from './dashboard.js';
 import { SettingsPage } from './settings.js';
 import { CalibrationPage } from './calibration.js';
 import { TuningPage } from './tuning.js';
+import { SoundPage } from './sound.js';
 
 // =============================================================================
 // STATE
@@ -27,7 +28,8 @@ const pages = {
     dashboard: DashboardPage,
     settings: SettingsPage,
     calibration: CalibrationPage,
-    tuning: TuningPage
+    tuning: TuningPage,
+    sound: SoundPage
 };
 
 // =============================================================================
