@@ -1554,3 +1554,155 @@ input[type="file"]::file-selector-button {
     display: flex;
     justify-content: center;
 }
+
+/* =============================================================================
+   SOUND SETTINGS PAGE
+   ============================================================================= */
+
+.sound-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Profile select */
+.select {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+.profile-info {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: var(--bg-input);
+    border-radius: 4px;
+}
+
+.profile-info .description {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+/* Slider row */
+.slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.slider-row .label {
+    flex: 0 0 120px;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.slider-row input[type="range"] {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-input);
+    border-radius: 3px;
+    outline: none;
+}
+
+.slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    cursor: pointer;
+}
+
+.slider-row input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    cursor: pointer;
+    border: none;
+}
+
+.slider-row .value {
+    min-width: 50px;
+    text-align: right;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 0.85em;
+    color: var(--accent-cyan);
+}
+
+/* Collapsible section */
+.card.collapsible h2 {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.collapse-icon {
+    font-size: 1.2em;
+    font-weight: 300;
+    color: var(--text-secondary);
+}
+
+.collapsed {
+    display: none !important;
+}
+
+/* Save container */
+.save-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.save-container .btn {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 12px 32px;
+}
+
+/* Responsive - tablet */
+@media (min-width: 768px) {
+    .slider-row .label {
+        flex: 0 0 160px;
+    }
+
+    .sound-settings .profile-container,
+    .sound-settings .volume-container,
+    .sound-settings .engine-container,
+    .sound-settings .advanced-container {
+        max-width: 600px;
+    }
+}
+
+/* Responsive - desktop */
+@media (min-width: 1200px) {
+    .sound-settings {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .sound-settings .card:first-child {
+        grid-column: span 2;
+    }
+
+    .sound-settings .card:last-child {
+        grid-column: span 2;
+    }
+}

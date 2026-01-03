@@ -25,7 +25,7 @@
 static const char *TAG = "SOUND";
 
 // Audio parameters
-#define SAMPLE_RATE         16000   // 16kHz (more compatible)
+#define SAMPLE_RATE         22050   // 22050 Hz to match engine sound samples
 #define BITS_PER_SAMPLE     16
 #define MAX_VOICES          6       // Maximum simultaneous voices
 #define BELL_PARTIALS       9       // Number of partials for bell synthesis
@@ -34,8 +34,8 @@ static const char *TAG = "SOUND";
 #define PI                  3.14159265358979f
 #define TWO_PI              6.28318530717959f
 
-// I2S channel handle
-static i2s_chan_handle_t tx_handle = NULL;
+// I2S channel handle (non-static for sharing with engine_sound.c)
+i2s_chan_handle_t tx_handle = NULL;
 static bool sound_initialized = false;
 static bool sound_playing = false;
 static uint8_t master_volume = 70;
@@ -425,11 +425,14 @@ esp_err_t sound_init(void) {
     // Clear voice array
     clear_all_voices();
 
-    // Channel configuration
+    // Channel configuration with larger DMA buffers to prevent timeout
+    // dma_buffer_size = dma_frame_num * slot_num * slot_bit_width / 8 ≤ 4092
+    // For stereo 16-bit: dma_frame_num * 2 * 2 = dma_frame_num * 4 ≤ 4092
+    // Max dma_frame_num = 1023, using 512 for safety
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
-    chan_cfg.dma_desc_num = 8;
-    chan_cfg.dma_frame_num = 256;
+    chan_cfg.dma_desc_num = 8;      // 8 DMA descriptors
+    chan_cfg.dma_frame_num = 512;   // 512 frames per DMA buffer (was 256)
 
     esp_err_t ret = i2s_new_channel(&chan_cfg, &tx_handle, NULL);
     if (ret != ESP_OK) {
@@ -502,51 +505,11 @@ esp_err_t sound_play_boot_chime(void) {
 
     ESP_LOGI(TAG, "Playing boot chime...");
 
-    // === 8x8 CRAWLER BOOT SEQUENCE ===
-    // Theme: Rugged, powerful, ready for adventure
-
-    // Part 1: Power-up rumble (low frequency "engine starting" feel)
-    ESP_LOGI(TAG, "Power up...");
-    generate_simple_tone(65, 150, 90);    // Low C2 rumble
-    generate_simple_tone(82, 100, 85);    // E2
-    generate_simple_tone(98, 80, 80);     // G2
+    // Simple two-tone boot chime - quick and clean
+    // Low tone followed by higher tone (like a "ready" confirmation)
+    generate_simple_tone(440, 80, 70);    // A4 - first beep
     vTaskDelay(pdMS_TO_TICKS(50));
-
-    // Part 2: Systems online - rising power sequence
-    ESP_LOGI(TAG, "Systems online...");
-    const float power_up[] = {130.81f, 164.81f, 196.0f, 261.63f};  // C3, E3, G3, C4
-    for (int i = 0; i < 4; i++) {
-        generate_simple_tone((uint32_t)power_up[i], 60, 75);
-        vTaskDelay(pdMS_TO_TICKS(30));
-    }
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Part 3: Ready signal - triumphant bell chord (power fifth + octave)
-    ESP_LOGI(TAG, "Ready...");
-    clear_all_voices();
-
-    // Epic power chord: Root + Fifth + Octave (like a vehicle horn fanfare)
-    // Using E major for a bright, powerful sound
-    const float ready_chord[] = {
-        329.63f,   // E4 (root)
-        493.88f,   // B4 (fifth)
-        659.25f,   // E5 (octave)
-    };
-
-    for (int i = 0; i < 3; i++) {
-        int voice = find_free_voice();
-        float amp = 0.7f - (i * 0.1f);
-        init_bell_voice(voice, ready_chord[i], amp, 0.005f, 0.25f, 0.15f, 0.8f, 1200);
-    }
-    play_voices();
-
-    vTaskDelay(pdMS_TO_TICKS(150));
-
-    // Part 4: Final accent - high "locked and loaded" ping
-    clear_all_voices();
-    int v = find_free_voice();
-    init_bell_voice(v, 1318.5f, 0.5f, 0.002f, 0.15f, 0.05f, 0.4f, 600);  // E6
-    play_voices();
+    generate_simple_tone(880, 120, 75);   // A5 - second beep (octave up)
 
     ESP_LOGI(TAG, "Boot chime complete");
     return ESP_OK;
@@ -564,26 +527,18 @@ esp_err_t sound_play(sound_effect_t effect) {
             return sound_play_boot_chime();
 
         case SOUND_WIFI_ON: {
-            // Rising bell arpeggio
-            const float freqs[] = {659.25f, 830.61f, 987.77f};  // E5, G#5, B5
-            for (int i = 0; i < 3; i++) {
-                vTaskDelay(pdMS_TO_TICKS(60));
-                int v = find_free_voice();
-                init_bell_voice(v, freqs[i], 0.5f, 0.003f, 0.2f, 0.1f, 0.4f, 500);
-            }
-            play_voices();
+            // Simple rising two-tone
+            generate_simple_tone(660, 60, 65);   // E5
+            vTaskDelay(pdMS_TO_TICKS(30));
+            generate_simple_tone(880, 80, 70);   // A5
             break;
         }
 
         case SOUND_WIFI_OFF: {
-            // Falling bell arpeggio
-            const float freqs[] = {987.77f, 830.61f, 659.25f};  // B5, G#5, E5
-            for (int i = 0; i < 3; i++) {
-                vTaskDelay(pdMS_TO_TICKS(60));
-                int v = find_free_voice();
-                init_bell_voice(v, freqs[i], 0.5f, 0.003f, 0.2f, 0.1f, 0.4f, 500);
-            }
-            play_voices();
+            // Simple falling two-tone
+            generate_simple_tone(880, 60, 65);   // A5
+            vTaskDelay(pdMS_TO_TICKS(30));
+            generate_simple_tone(440, 80, 70);   // A4
             break;
         }
 

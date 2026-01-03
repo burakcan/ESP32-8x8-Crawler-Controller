@@ -87,6 +87,12 @@ int16_t tuning_apply_realistic_throttle(int16_t throttle_input);
 void tuning_reset_realistic_throttle(void);
 
 /**
+ * @brief Get current simulated velocity
+ * @return Current velocity (-1000 to +1000)
+ */
+int16_t tuning_get_simulated_velocity(void);
+
+/**
  * @brief Apply steering expo curve
  * @param input Input value (-1000 to +1000)
  * @return Output value with expo applied
@@ -115,6 +121,18 @@ int16_t tuning_apply_speed_steering(int16_t steering);
  * @param enabled true to enable realistic mode, false for direct pass-through
  */
 void tuning_set_realistic_override(bool enabled);
+
+/**
+ * @brief Check if currently braking (throttle opposing movement direction)
+ * @return true if braking
+ */
+bool tuning_is_braking(void);
+
+/**
+ * @brief Get the last movement direction
+ * @return 1 for forward, -1 for reverse, 0 for stopped
+ */
+int8_t tuning_get_last_direction(void);
 
 #endif // TUNING_H
 

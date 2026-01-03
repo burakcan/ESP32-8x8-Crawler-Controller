@@ -99,4 +99,19 @@ esp_err_t nvs_storage_set_blob(const char *key, const void *data, size_t len);
  */
 esp_err_t nvs_storage_get_blob(const char *key, void *data, size_t *len);
 
+/**
+ * @brief Save engine sound configuration to NVS
+ * @param config Pointer to engine sound config to save
+ * @return ESP_OK on success
+ */
+esp_err_t nvs_save_sound_config(const void *config, size_t len);
+
+/**
+ * @brief Load engine sound configuration from NVS
+ * @param config Pointer to engine sound config structure to fill
+ * @param len Pointer to length (in: buffer size, out: actual size)
+ * @return ESP_OK on success, ESP_ERR_NOT_FOUND if no config saved
+ */
+esp_err_t nvs_load_sound_config(void *config, size_t *len);
+
 #endif // NVS_STORAGE_H

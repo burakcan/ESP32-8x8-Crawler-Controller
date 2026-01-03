@@ -18,6 +18,7 @@ static int16_t simulated_velocity = 0;  // Current simulated velocity (-1000 to 
 static int8_t last_direction = 0;       // Last movement direction: -1=reverse, 0=neutral, 1=forward
 static bool throttle_released = true;   // Has throttle returned to neutral since stopping?
 static bool realistic_override = false; // AUX4 override for realistic mode
+static bool currently_braking = false;  // True when throttle opposes movement
 
 /**
  * @brief Set default tuning values
@@ -323,6 +324,9 @@ int16_t tuning_apply_realistic_throttle(int16_t throttle_input)
     bool moving_reverse = (simulated_velocity < 0);
     bool stopped = (simulated_velocity == 0);
 
+    // Reset braking flag - will be set if braking detected
+    currently_braking = false;
+
     // Track throttle release for direction change lockout
     if (throttle_neutral) {
         throttle_released = true;
@@ -339,7 +343,11 @@ int16_t tuning_apply_realistic_throttle(int16_t throttle_input)
         }
     }
     // Case 2: Throttle opposite to movement - active braking (does NOT reverse)
-    else if ((throttle_forward && moving_reverse) || (throttle_reverse && moving_forward)) {
+    // Also consider braking when stopped but holding throttle opposite to last direction
+    else if ((throttle_forward && moving_reverse) || (throttle_reverse && moving_forward) ||
+             (stopped && throttle_reverse && last_direction == 1) ||
+             (stopped && throttle_forward && last_direction == -1)) {
+        currently_braking = true;  // Set braking flag for engine sound
         static int log_cnt = 0;
         if (++log_cnt >= 20) {  // Log every 200ms
             ESP_LOGI(TAG, "BRAKE: vel=%d str=%d force=%d%%", simulated_velocity, brake_strength, esc->brake_force);
@@ -348,10 +356,11 @@ int16_t tuning_apply_realistic_throttle(int16_t throttle_input)
         if (moving_forward) {
             simulated_velocity -= brake_strength;
             if (simulated_velocity < 0) simulated_velocity = 0;
-        } else {
+        } else if (moving_reverse) {
             simulated_velocity += brake_strength;
             if (simulated_velocity > 0) simulated_velocity = 0;
         }
+        // When stopped, velocity stays 0 (already handled above)
         // Braking does not allow direction change - must release throttle first
         throttle_released = false;
     }
@@ -417,6 +426,11 @@ void tuning_reset_realistic_throttle(void)
     simulated_velocity = 0;
     last_direction = 0;
     throttle_released = true;
+}
+
+int16_t tuning_get_simulated_velocity(void)
+{
+    return simulated_velocity;
 }
 
 void tuning_set_realistic_override(bool enabled)
@@ -497,4 +511,14 @@ int16_t tuning_apply_speed_steering(int16_t steering)
     if (result < -1000) result = -1000;
 
     return (int16_t)result;
+}
+
+bool tuning_is_braking(void)
+{
+    return currently_braking;
+}
+
+int8_t tuning_get_last_direction(void)
+{
+    return last_direction;
 }

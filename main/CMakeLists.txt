@@ -27,7 +27,9 @@ idf_component_register(
         "led_rgb.c"
         "udp_log.c"
         "sound.c"
-    INCLUDE_DIRS "."
+        "engine_sound.c"
+        "sounds/sound_profiles.c"
+    INCLUDE_DIRS "." "sounds" "sounds/tatra813" "sounds/detroit8v92" "sounds/cat3408"
     REQUIRES
         driver
         esp_driver_mcpwm

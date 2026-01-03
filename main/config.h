@@ -147,6 +147,7 @@ typedef enum {
 #define NVS_KEY_CALIBRATION     "calibration"
 #define NVS_KEY_WIFI_STA        "wifi_sta"
 #define NVS_KEY_TUNING          "tuning"
+#define NVS_KEY_SOUND           "sound"
 
 // ============================================================================
 // TUNING CONFIGURATION
