@@ -374,23 +374,24 @@ static esp_err_t file_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
     
-    // Open file
-    FILE *f = fopen(filepath, "r");
+    // Open file in binary mode
+    FILE *f = fopen(filepath, "rb");
     if (!f) {
         ESP_LOGE(TAG, "Failed to open: %s", filepath);
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
-    
+
     // Set content type
     httpd_resp_set_type(req, get_mime_type(filepath));
-    
+
     // Send file in chunks
-    char buf[512];
+    char buf[1024];
     size_t read_bytes;
     esp_err_t ret = ESP_OK;
     while ((read_bytes = fread(buf, 1, sizeof(buf), f)) > 0) {
         if (httpd_resp_send_chunk(req, buf, read_bytes) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed sending %s", filepath);
             ret = ESP_FAIL;
             break;
         }
@@ -813,8 +814,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
     sound_profile_t profile = engine_sound_get_profile();
     const char *profile_name = sound_profiles_get_name(profile);
 
-    // Build JSON response
-    char response[512];
+    // Build JSON response (increased buffer for effect settings)
+    char response[1024];
     snprintf(response, sizeof(response),
         "{"
         "\"profile\":%d,"
@@ -834,7 +835,17 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         "\"jakeBrakeEnabled\":%s,"
         "\"v8Mode\":%s,"
         "\"enabled\":%s,"
-        "\"rpm\":%d"
+        "\"rpm\":%d,"
+        "\"airBrakeEnabled\":%s,"
+        "\"airBrakeVolume\":%d,"
+        "\"reverseBeepEnabled\":%s,"
+        "\"reverseBeepVolume\":%d,"
+        "\"gearShiftEnabled\":%s,"
+        "\"gearShiftVolume\":%d,"
+        "\"turboEnabled\":%s,"
+        "\"turboVolume\":%d,"
+        "\"wastegateEnabled\":%s,"
+        "\"wastegateVolume\":%d"
         "}",
         profile,
         profile_name,
@@ -853,7 +864,17 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         cfg->jake_brake_enabled ? "true" : "false",
         cfg->v8_mode ? "true" : "false",
         engine_sound_is_enabled() ? "true" : "false",
-        engine_sound_get_rpm()
+        engine_sound_get_rpm(),
+        cfg->air_brake_enabled ? "true" : "false",
+        cfg->air_brake_volume,
+        cfg->reverse_beep_enabled ? "true" : "false",
+        cfg->reverse_beep_volume,
+        cfg->gear_shift_enabled ? "true" : "false",
+        cfg->gear_shift_volume,
+        cfg->turbo_enabled ? "true" : "false",
+        cfg->turbo_volume,
+        cfg->wastegate_enabled ? "true" : "false",
+        cfg->wastegate_volume
     );
 
     httpd_resp_set_type(req, "application/json");
@@ -866,7 +887,7 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
  */
 static esp_err_t sound_post_handler(httpd_req_t *req)
 {
-    char buf[512];
+    char buf[1024];  // Increased for effect settings
     int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (received <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
@@ -907,6 +928,18 @@ static esp_err_t sound_post_handler(httpd_req_t *req)
     if (parse_json_bool(buf, "v8Mode", &bval)) cfg.v8_mode = bval;
     if (parse_json_bool(buf, "enabled", &bval)) engine_sound_enable(bval);
 
+    // Parse sound effect settings
+    if (parse_json_bool(buf, "airBrakeEnabled", &bval)) cfg.air_brake_enabled = bval;
+    if (parse_json_int(buf, "airBrakeVolume", &val)) cfg.air_brake_volume = val;
+    if (parse_json_bool(buf, "reverseBeepEnabled", &bval)) cfg.reverse_beep_enabled = bval;
+    if (parse_json_int(buf, "reverseBeepVolume", &val)) cfg.reverse_beep_volume = val;
+    if (parse_json_bool(buf, "gearShiftEnabled", &bval)) cfg.gear_shift_enabled = bval;
+    if (parse_json_int(buf, "gearShiftVolume", &val)) cfg.gear_shift_volume = val;
+    if (parse_json_bool(buf, "turboEnabled", &bval)) cfg.turbo_enabled = bval;
+    if (parse_json_int(buf, "turboVolume", &val)) cfg.turbo_volume = val;
+    if (parse_json_bool(buf, "wastegateEnabled", &bval)) cfg.wastegate_enabled = bval;
+    if (parse_json_int(buf, "wastegateVolume", &val)) cfg.wastegate_volume = val;
+
     // Apply configuration
     engine_sound_set_config(&cfg);
 
@@ -923,7 +956,7 @@ static esp_err_t sound_post_handler(httpd_req_t *req)
  */
 static esp_err_t sound_profiles_handler(httpd_req_t *req)
 {
-    char response[512];
+    char response[512];  // Sized for 3 profiles
     int len = 0;
 
     len += snprintf(response + len, sizeof(response) - len, "{\"profiles\":[");
@@ -1166,6 +1199,7 @@ static esp_err_t servo_test_post_handler(httpd_req_t *req)
 static esp_err_t start_webserver(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 6144;      // Increased from 4096 for file serving buffer
     config.max_uri_handlers = 24;  // Need extra for calibration + servo test APIs
     config.lru_purge_enable = true;
     config.uri_match_fn = httpd_uri_match_wildcard;

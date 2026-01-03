@@ -117,10 +117,25 @@ uint8_t tuning_get_axle_ratio(uint8_t axle_idx, steering_mode_t mode);
 int16_t tuning_apply_speed_steering(int16_t steering);
 
 /**
- * @brief Override realistic throttle mode from AUX switch
- * @param enabled true to enable realistic mode, false for direct pass-through
+ * @brief Throttle mode selection (3-position switch)
  */
-void tuning_set_realistic_override(bool enabled);
+typedef enum {
+    THROTTLE_MODE_DIRECT = 0,   // Direct pass-through (low position)
+    THROTTLE_MODE_NEUTRAL,      // Rev engine but no ESC output (center position)
+    THROTTLE_MODE_REALISTIC     // Realistic throttle physics (high position)
+} throttle_mode_t;
+
+/**
+ * @brief Set throttle mode from AUX switch
+ * @param mode Throttle mode selection
+ */
+void tuning_set_throttle_mode(throttle_mode_t mode);
+
+/**
+ * @brief Check if in neutral mode (engine rev only, no ESC output)
+ * @return true if neutral mode active
+ */
+bool tuning_is_neutral_mode(void);
 
 /**
  * @brief Check if currently braking (throttle opposing movement direction)

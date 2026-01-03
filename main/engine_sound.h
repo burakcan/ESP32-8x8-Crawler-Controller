@@ -57,6 +57,22 @@ typedef struct {
     // Flags
     bool jake_brake_enabled;            // Enable jake brake sound
     bool v8_mode;                       // V8 firing pattern (pulses 4,8 louder)
+
+    // Sound effects settings
+    bool air_brake_enabled;             // Enable air brake release sound
+    uint8_t air_brake_volume;           // Air brake volume (0-100)
+
+    bool reverse_beep_enabled;          // Enable reversing beep sound
+    uint8_t reverse_beep_volume;        // Reverse beep volume (0-100)
+
+    bool gear_shift_enabled;            // Enable gear shift clunk sound
+    uint8_t gear_shift_volume;          // Gear shift volume (0-100)
+
+    bool turbo_enabled;                 // Enable turbo whistle sound
+    uint8_t turbo_volume;               // Turbo volume (0-100)
+
+    bool wastegate_enabled;             // Enable wastegate sound
+    uint8_t wastegate_volume;           // Wastegate volume (0-100)
 } engine_sound_config_t;
 
 /**

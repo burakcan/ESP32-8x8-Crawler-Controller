@@ -1706,3 +1706,118 @@ input[type="file"]::file-selector-button {
         grid-column: span 2;
     }
 }
+
+/* =============================================================================
+   SOUND EFFECTS CONTROLS
+   ============================================================================= */
+
+.effects-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.effect-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+}
+
+/* Inline toggle for effect rows */
+.toggle-inline {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.toggle-inline input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider-small {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--border-color);
+    border-radius: 20px;
+    transition: 0.3s;
+}
+
+.toggle-slider-small:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.toggle-inline input:checked + .toggle-slider-small {
+    background: linear-gradient(135deg, #00aa44, var(--accent-green));
+}
+
+.toggle-inline input:checked + .toggle-slider-small:before {
+    background: #fff;
+    transform: translateX(16px);
+}
+
+.effect-row .label {
+    flex: 0 0 100px;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.effect-slider {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-input);
+    border-radius: 3px;
+    outline: none;
+}
+
+.effect-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-orange);
+    cursor: pointer;
+}
+
+.effect-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-orange);
+    cursor: pointer;
+    border: none;
+}
+
+.effect-row .value {
+    min-width: 40px;
+    text-align: right;
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 0.8em;
+    color: var(--accent-orange);
+}
+
+/* Tablet - wider labels */
+@media (min-width: 768px) {
+    .effect-row .label {
+        flex: 0 0 120px;
+    }
+}

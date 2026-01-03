@@ -17,7 +17,7 @@ static tuning_config_t current_config;
 static int16_t simulated_velocity = 0;  // Current simulated velocity (-1000 to +1000)
 static int8_t last_direction = 0;       // Last movement direction: -1=reverse, 0=neutral, 1=forward
 static bool throttle_released = true;   // Has throttle returned to neutral since stopping?
-static bool realistic_override = false; // AUX4 override for realistic mode
+static throttle_mode_t current_throttle_mode = THROTTLE_MODE_DIRECT; // AUX4 throttle mode
 static bool currently_braking = false;  // True when throttle opposes movement
 
 /**
@@ -277,8 +277,8 @@ uint16_t tuning_calc_esc_pulse(int16_t throttle)
         throttle = (throttle * esc->rev_limit) / 100;
     }
 
-    // Apply realistic throttle behavior if AUX4 switch is ON
-    if (realistic_override) {
+    // Apply realistic throttle behavior if AUX4 switch is in high position
+    if (current_throttle_mode == THROTTLE_MODE_REALISTIC) {
         throttle = tuning_apply_realistic_throttle(throttle);
     }
 
@@ -433,9 +433,14 @@ int16_t tuning_get_simulated_velocity(void)
     return simulated_velocity;
 }
 
-void tuning_set_realistic_override(bool enabled)
+void tuning_set_throttle_mode(throttle_mode_t mode)
 {
-    realistic_override = enabled;
+    current_throttle_mode = mode;
+}
+
+bool tuning_is_neutral_mode(void)
+{
+    return current_throttle_mode == THROTTLE_MODE_NEUTRAL;
 }
 
 int16_t tuning_apply_expo(int16_t input)

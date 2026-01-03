@@ -94,7 +94,7 @@ static void process_control_loop(void)
     static bool aux3_long_press_handled = false;
     static bool wifi_enabled = false;
 
-    bool aux3_pressed = (aux3_data.value > 200);  // Button is currently pressed
+    bool aux3_pressed = (aux3_data.value > 400);  // Button is currently pressed (value range -1000 to +1000)
     int64_t now_ms = esp_timer_get_time() / 1000;
 
     if (aux3_pressed && !aux3_was_pressed) {
@@ -135,9 +135,25 @@ static void process_control_loop(void)
     }
     aux3_was_pressed = aux3_pressed;
 
-    // AUX4 controls realistic throttle mode (ON when switch is high)
-    bool realistic_switch = (aux4_data.value > 200);
-    tuning_set_realistic_override(realistic_switch);
+    // AUX4 controls throttle mode (3-position switch)
+    // Values: -836 (low), 0 (center), 836 (high) - range roughly -1000 to +1000
+    // Low (<-400): Direct pass-through
+    // Center (-400 to 400): Neutral - rev engine but no ESC output
+    // High (>400): Realistic throttle physics
+    static throttle_mode_t prev_throttle_mode = THROTTLE_MODE_DIRECT;
+    throttle_mode_t throttle_mode;
+    if (aux4_data.value > 400) {
+        throttle_mode = THROTTLE_MODE_REALISTIC;
+    } else if (aux4_data.value > -400) {
+        throttle_mode = THROTTLE_MODE_NEUTRAL;
+    } else {
+        throttle_mode = THROTTLE_MODE_DIRECT;
+    }
+    if (throttle_mode != prev_throttle_mode) {
+        ESP_LOGI(TAG, "Throttle mode: %d (aux4=%d)", throttle_mode, aux4_data.value);
+        prev_throttle_mode = throttle_mode;
+    }
+    tuning_set_throttle_mode(throttle_mode);
 
     // Check for signal loss
     if (signal_lost) {
@@ -158,11 +174,25 @@ static void process_control_loop(void)
     }
 
     // Apply throttle to ESC with tuning (limits, subtrim, deadzone, reverse)
-    uint16_t esc_pulse = tuning_calc_esc_pulse(throttle_data.value);
-    esc_set_pulse(esc_pulse);
+    // Skip ESC output in neutral mode (rev engine sound only)
+    if (!tuning_is_neutral_mode()) {
+        uint16_t esc_pulse = tuning_calc_esc_pulse(throttle_data.value);
+        esc_set_pulse(esc_pulse);
+    } else {
+        esc_set_neutral();
+    }
 
-    // Update engine sound based on throttle and simulated velocity
-    engine_sound_update(throttle_data.value, tuning_get_simulated_velocity());
+    // Update engine sound based on throttle and velocity
+    // In realistic mode: use simulated velocity for natural physics
+    // In direct/neutral mode: use throttle directly as pseudo-velocity for effects
+    int16_t sound_velocity;
+    if (throttle_mode == THROTTLE_MODE_REALISTIC) {
+        sound_velocity = tuning_get_simulated_velocity();
+    } else {
+        // Use throttle as velocity - this makes effects work in all modes
+        sound_velocity = throttle_data.value;
+    }
+    engine_sound_update(throttle_data.value, sound_velocity);
 
     // Apply steering expo curve
     int16_t steer = tuning_apply_expo(steering_data.value);
@@ -184,8 +214,8 @@ static void process_control_loop(void)
         // AUX1 ON  + AUX2 OFF = All Axle (tight turns)
         // AUX1 OFF + AUX2 ON  = Crab (sideways)
         // AUX1 ON  + AUX2 ON  = Rear (rear axles steer)
-        bool aux1_on = aux1_data.value > 200;
-        bool aux2_on = aux2_data.value > 200;
+        bool aux1_on = aux1_data.value > 400;
+        bool aux2_on = aux2_data.value > 400;
 
         if (!aux1_on && !aux2_on) {
             new_mode = STEER_MODE_FRONT;
