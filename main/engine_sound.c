@@ -32,6 +32,13 @@
 // Sound profiles system
 #include "sounds/sound_profiles.h"
 
+// Sound effect samples
+#include "sounds/effects/air_brake.h"
+#include "sounds/effects/reverse_beep.h"
+#include "sounds/effects/gear_shift.h"
+#include "sounds/effects/turbo_whistle.h"
+#include "sounds/effects/wastegate.h"
+
 static const char *TAG = "ENGINE_SND";
 
 // Current sound profile
@@ -46,9 +53,9 @@ static const sound_profile_def_t *current_profile = NULL;
 #define IDLE_RPM                100     // Base idle RPM (normalized scale)
 #define MAX_RPM                 500     // Maximum RPM (normalized scale)
 
-// Default configuration for URAL 4320
+// Default configuration for CAT 3408
 static engine_sound_config_t config = {
-    .profile = SOUND_PROFILE_URAL_4320,
+    .profile = SOUND_PROFILE_CAT_3408,
     .master_volume = 100,
     .idle_volume = 100,
     .rev_volume = 80,         // Rev slightly quieter since it's layered on top
@@ -62,7 +69,18 @@ static engine_sound_config_t config = {
     .knock_start_point = 150, // Only knock above this RPM (not at idle)
     .knock_interval = 8,      // V8 engine = 8 cylinders
     .jake_brake_enabled = true,
-    .v8_mode = true
+    .v8_mode = true,
+    // Sound effects defaults - all enabled at 70% volume
+    .air_brake_enabled = true,
+    .air_brake_volume = 70,
+    .reverse_beep_enabled = true,
+    .reverse_beep_volume = 70,
+    .gear_shift_enabled = true,
+    .gear_shift_volume = 70,
+    .turbo_enabled = true,
+    .turbo_volume = 70,
+    .wastegate_enabled = true,
+    .wastegate_volume = 70
 };
 
 // Engine state
@@ -121,6 +139,25 @@ static uint32_t rev_sample_pos = 0;
 static uint32_t knock_sample_pos = 0;
 static uint32_t jake_sample_pos = 0;
 static uint32_t start_sample_pos = 0;
+
+// Sound effect playback state
+static bool air_brake_trigger = false;
+static uint32_t air_brake_sample_pos = 0;
+
+static bool reverse_beep_playing = false;
+static uint32_t reverse_beep_sample_pos = 0;
+
+static bool gear_shift_sound_trigger = false;
+static uint32_t gear_shift_sound_sample_pos = 0;
+
+static bool turbo_playing = false;
+static uint32_t turbo_sample_pos = 0;
+static uint16_t turbo_volume_faded = 0;  // Throttle-dependent turbo volume
+
+static bool wastegate_trigger = false;
+static uint32_t wastegate_sample_pos = 0;
+static int64_t wastegate_lockout_time = 0;  // Cooldown timer
+static int16_t prev_throttle_for_wastegate = 0;  // Track throttle changes
 
 // I2S handle (shared with sound.c - we'll get it from there)
 extern i2s_chan_handle_t tx_handle;
@@ -391,6 +428,80 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             }
         }
 
+        // =====================================================================
+        // SOUND EFFECTS MIXING
+        // =====================================================================
+
+        // Air brake release sound (one-shot, triggered after stop)
+        if (air_brake_trigger && config.air_brake_enabled) {
+            uint32_t idx = air_brake_sample_pos >> 16;
+            if (idx < effect_airBrakeSampleCount) {
+                int16_t sample = ((int16_t)effect_airBrakeSamples[idx]) << 8;
+                int32_t vol = (config.air_brake_volume * config.master_volume) / 100;
+                mix += ((int32_t)sample * vol) >> 8;
+                air_brake_sample_pos += 0x10000;  // Normal rate
+            } else {
+                air_brake_trigger = false;
+                air_brake_sample_pos = 0;
+            }
+        }
+
+        // Reversing beep sound (looping while in reverse)
+        if (reverse_beep_playing && config.reverse_beep_enabled) {
+            uint32_t idx = reverse_beep_sample_pos >> 16;
+            if (idx < effect_reverseBeepSampleCount) {
+                int16_t sample = ((int16_t)effect_reverseBeepSamples[idx]) << 8;
+                int32_t vol = (config.reverse_beep_volume * config.master_volume) / 100;
+                mix += ((int32_t)sample * vol) >> 8;
+                reverse_beep_sample_pos += 0x10000;  // Normal rate
+            } else {
+                reverse_beep_sample_pos = 0;  // Loop
+            }
+        }
+
+        // Gear shift clunk sound (one-shot on gear change)
+        if (gear_shift_sound_trigger && config.gear_shift_enabled) {
+            uint32_t idx = gear_shift_sound_sample_pos >> 16;
+            if (idx < effect_gearShiftSampleCount) {
+                int16_t sample = ((int16_t)effect_gearShiftSamples[idx]) << 8;
+                int32_t vol = (config.gear_shift_volume * config.master_volume) / 100;
+                mix += ((int32_t)sample * vol) >> 8;
+                gear_shift_sound_sample_pos += 0x10000;  // Normal rate
+            } else {
+                gear_shift_sound_trigger = false;
+                gear_shift_sound_sample_pos = 0;
+            }
+        }
+
+        // Turbo whistle sound (looping, volume varies with throttle)
+        if (turbo_playing && config.turbo_enabled) {
+            uint32_t idx = turbo_sample_pos >> 16;
+            if (idx < effect_turboSampleCount) {
+                int16_t sample = ((int16_t)effect_turboSamples[idx]) << 8;
+                int32_t vol = (config.turbo_volume * turbo_volume_faded * config.master_volume) / 10000;
+                mix += ((int32_t)sample * vol) >> 8;
+                turbo_sample_pos += 0x10000;  // Normal rate
+            } else {
+                turbo_sample_pos = 0;  // Loop
+            }
+        }
+
+        // Wastegate/blowoff sound (one-shot after rapid throttle drop)
+        if (wastegate_trigger && config.wastegate_enabled) {
+            uint32_t idx = wastegate_sample_pos >> 16;
+            if (idx < effect_wastegateSampleCount) {
+                int16_t sample = ((int16_t)effect_wastegateSamples[idx]) << 8;
+                // RPM-dependent wastegate volume (louder at higher RPM)
+                int32_t rpm_vol = 50 + (current_rpm * 50 / MAX_RPM);  // 50-100%
+                int32_t vol = (config.wastegate_volume * rpm_vol * config.master_volume) / 10000;
+                mix += ((int32_t)sample * vol) >> 8;
+                wastegate_sample_pos += 0x10000;  // Normal rate
+            } else {
+                wastegate_trigger = false;
+                wastegate_sample_pos = 0;
+            }
+        }
+
         // Clamp to 16-bit range
         if (mix > 32767) mix = 32767;
         if (mix < -32768) mix = -32768;
@@ -651,6 +762,21 @@ esp_err_t engine_sound_init(void) {
     rev_sample_pos = 0;
     knock_sample_pos = 0;
     jake_sample_pos = 0;
+
+    // Reset effect state
+    air_brake_trigger = false;
+    air_brake_sample_pos = 0;
+    reverse_beep_playing = false;
+    reverse_beep_sample_pos = 0;
+    gear_shift_sound_trigger = false;
+    gear_shift_sound_sample_pos = 0;
+    turbo_playing = false;
+    turbo_sample_pos = 0;
+    turbo_volume_faded = 0;
+    wastegate_trigger = false;
+    wastegate_sample_pos = 0;
+    wastegate_lockout_time = 0;
+    prev_throttle_for_wastegate = 0;
 
     // Create engine sound task
     engine_task_running = true;
@@ -974,6 +1100,104 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         jake_brake_active = config.jake_brake_enabled;
     } else {
         jake_brake_active = false;
+    }
+
+    // =========================================================================
+    // SOUND EFFECTS TRIGGER DETECTION
+    // =========================================================================
+
+    // Air brake: trigger when coming to a stop from moving
+    // Triggers when speed drops from >100 to <30
+    static int16_t prev_vehicle_speed = 0;
+    static int16_t peak_vehicle_speed = 0;  // Track highest speed reached
+
+    // Track peak speed while moving
+    if (vehicle_speed > peak_vehicle_speed) {
+        peak_vehicle_speed = vehicle_speed;
+    }
+
+    // Trigger when stopping after moving at decent speed
+    if (peak_vehicle_speed > 100 && vehicle_speed < 30 && !air_brake_trigger) {
+        air_brake_trigger = true;
+        air_brake_sample_pos = 0;
+        ESP_LOGI(TAG, "Air brake triggered (peak: %d, now: %d)", peak_vehicle_speed, vehicle_speed);
+        peak_vehicle_speed = 0;  // Reset after triggering
+    }
+
+    // Reset peak tracking when moving again
+    if (vehicle_speed > 50) {
+        // Don't reset peak while moving - let it accumulate
+    } else if (vehicle_speed < 10 && !air_brake_trigger) {
+        // Only reset peak after fully stopped and air brake done
+        peak_vehicle_speed = 0;
+    }
+
+    prev_vehicle_speed = vehicle_speed;
+
+    // Reverse beep: play when in reverse and engine is running
+    // Reference: loops continuously while escInReverse is true
+    if (in_reverse && engine_state == ENGINE_RUNNING) {
+        reverse_beep_playing = true;
+    } else {
+        reverse_beep_playing = false;
+        reverse_beep_sample_pos = 0;  // Reset for next time
+    }
+
+    // Gear shift clunk: trigger when gear_shift_trigger is set (already done in transmission logic)
+    // We reuse the existing gear_shift_trigger but for sound, not the RPM drop effect
+    if (gear_shift_trigger && !gear_shift_sound_trigger) {
+        gear_shift_sound_trigger = true;
+        gear_shift_sound_sample_pos = 0;
+        ESP_LOGI(TAG, "Gear shift sound triggered");
+    }
+
+    // Turbo whistle: active when throttle is high, volume depends on throttle
+    // Reference: turbo sound volume increases with throttle, loops continuously
+    if (effective_throttle > 100) {
+        turbo_playing = true;
+        // Fade turbo volume based on throttle (100-500 throttle maps to 0-100 volume)
+        int16_t target_turbo_vol = ((effective_throttle - 100) * 100) / 400;
+        if (target_turbo_vol > 100) target_turbo_vol = 100;
+        // Smooth fade
+        if (turbo_volume_faded < target_turbo_vol) {
+            turbo_volume_faded += 2;
+            if (turbo_volume_faded > target_turbo_vol) turbo_volume_faded = target_turbo_vol;
+        } else if (turbo_volume_faded > target_turbo_vol) {
+            turbo_volume_faded -= 2;
+            if (turbo_volume_faded < target_turbo_vol) turbo_volume_faded = target_turbo_vol;
+        }
+    } else {
+        // Fade out turbo when throttle is low
+        if (turbo_volume_faded > 2) {
+            turbo_volume_faded -= 2;
+        } else {
+            turbo_volume_faded = 0;
+        }
+        if (turbo_volume_faded == 0) {
+            turbo_playing = false;
+            turbo_sample_pos = 0;
+        }
+    }
+
+    // Wastegate/blowoff: trigger after rapid throttle drop while turbo was spooling
+    // Triggers when throttle drops by >80 from a high value, with 1 second cooldown
+    if (prev_throttle_for_wastegate > 150 &&
+        prev_throttle_for_wastegate - effective_throttle > 80 &&
+        !wastegate_trigger &&
+        (now - wastegate_lockout_time) > 1000) {
+        wastegate_trigger = true;
+        wastegate_sample_pos = 0;
+        wastegate_lockout_time = now;
+        prev_throttle_for_wastegate = 0;  // Reset to prevent repeated triggers
+        ESP_LOGI(TAG, "Wastegate triggered (throttle: %d -> %d)", prev_throttle_for_wastegate, effective_throttle);
+    }
+
+    // Update throttle tracking - only when throttle is high enough to build boost
+    if (effective_throttle > 80) {
+        prev_throttle_for_wastegate = effective_throttle;
+    } else if (effective_throttle < 30) {
+        // Reset tracking when fully off throttle (prevents re-trigger on next throttle up)
+        prev_throttle_for_wastegate = 0;
     }
 
     last_throttle = effective_throttle;

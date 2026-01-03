@@ -105,6 +105,59 @@ export class SoundPage {
                     </div>
                 </div>
 
+                <!-- Sound Effects Card -->
+                <div class="card">
+                    <h2>Sound Effects</h2>
+                    <div class="effects-container">
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="air-brake-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Air Brake</span>
+                            <input type="range" id="air-brake-volume" min="0" max="100" value="70" class="effect-slider"/>
+                            <span class="value" id="air-brake-volume-val">70%</span>
+                        </div>
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="reverse-beep-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Reverse Beep</span>
+                            <input type="range" id="reverse-beep-volume" min="0" max="100" value="70" class="effect-slider"/>
+                            <span class="value" id="reverse-beep-volume-val">70%</span>
+                        </div>
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="gear-shift-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Gear Shift</span>
+                            <input type="range" id="gear-shift-volume" min="0" max="100" value="70" class="effect-slider"/>
+                            <span class="value" id="gear-shift-volume-val">70%</span>
+                        </div>
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="turbo-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Turbo Whistle</span>
+                            <input type="range" id="turbo-volume" min="0" max="100" value="70" class="effect-slider"/>
+                            <span class="value" id="turbo-volume-val">70%</span>
+                        </div>
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="wastegate-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Wastegate</span>
+                            <input type="range" id="wastegate-volume" min="0" max="100" value="70" class="effect-slider"/>
+                            <span class="value" id="wastegate-volume-val">70%</span>
+                        </div>
+                        <div class="hint">Effects trigger automatically based on driving conditions</div>
+                    </div>
+                </div>
+
                 <!-- Advanced Settings Card -->
                 <div class="card collapsible">
                     <h2 class="collapsible-header" id="advanced-toggle">Advanced Settings <span class="collapse-icon">+</span></h2>
@@ -171,6 +224,22 @@ export class SoundPage {
             decelerationVal: document.getElementById('deceleration-val'),
             jakeBrake: document.getElementById('jake-brake'),
             v8Mode: document.getElementById('v8-mode'),
+            // Sound Effects
+            airBrakeEnabled: document.getElementById('air-brake-enabled'),
+            airBrakeVolume: document.getElementById('air-brake-volume'),
+            airBrakeVolumeVal: document.getElementById('air-brake-volume-val'),
+            reverseBeepEnabled: document.getElementById('reverse-beep-enabled'),
+            reverseBeepVolume: document.getElementById('reverse-beep-volume'),
+            reverseBeepVolumeVal: document.getElementById('reverse-beep-volume-val'),
+            gearShiftEnabled: document.getElementById('gear-shift-enabled'),
+            gearShiftVolume: document.getElementById('gear-shift-volume'),
+            gearShiftVolumeVal: document.getElementById('gear-shift-volume-val'),
+            turboEnabled: document.getElementById('turbo-enabled'),
+            turboVolume: document.getElementById('turbo-volume'),
+            turboVolumeVal: document.getElementById('turbo-volume-val'),
+            wastegateEnabled: document.getElementById('wastegate-enabled'),
+            wastegateVolume: document.getElementById('wastegate-volume'),
+            wastegateVolumeVal: document.getElementById('wastegate-volume-val'),
             // Advanced
             advancedToggle: document.getElementById('advanced-toggle'),
             advancedContent: document.getElementById('advanced-content'),
@@ -196,6 +265,13 @@ export class SoundPage {
         this.setupSlider('maxRpm', '%');
         this.setupSlider('acceleration', '');
         this.setupSlider('deceleration', '');
+        // Sound effects
+        this.setupSlider('airBrakeVolume', '%');
+        this.setupSlider('reverseBeepVolume', '%');
+        this.setupSlider('gearShiftVolume', '%');
+        this.setupSlider('turboVolume', '%');
+        this.setupSlider('wastegateVolume', '%');
+        // Advanced
         this.setupSlider('revSwitch', '');
         this.setupSlider('idleEnd', '');
         this.setupSlider('knockStart', '');
@@ -322,6 +398,23 @@ export class SoundPage {
         el.jakeBrake.checked = cfg.jakeBrakeEnabled;
         el.v8Mode.checked = cfg.v8Mode;
 
+        // Sound Effects
+        el.airBrakeEnabled.checked = cfg.airBrakeEnabled;
+        el.airBrakeVolume.value = cfg.airBrakeVolume;
+        el.airBrakeVolumeVal.textContent = cfg.airBrakeVolume + '%';
+        el.reverseBeepEnabled.checked = cfg.reverseBeepEnabled;
+        el.reverseBeepVolume.value = cfg.reverseBeepVolume;
+        el.reverseBeepVolumeVal.textContent = cfg.reverseBeepVolume + '%';
+        el.gearShiftEnabled.checked = cfg.gearShiftEnabled;
+        el.gearShiftVolume.value = cfg.gearShiftVolume;
+        el.gearShiftVolumeVal.textContent = cfg.gearShiftVolume + '%';
+        el.turboEnabled.checked = cfg.turboEnabled;
+        el.turboVolume.value = cfg.turboVolume;
+        el.turboVolumeVal.textContent = cfg.turboVolume + '%';
+        el.wastegateEnabled.checked = cfg.wastegateEnabled;
+        el.wastegateVolume.value = cfg.wastegateVolume;
+        el.wastegateVolumeVal.textContent = cfg.wastegateVolume + '%';
+
         // Advanced
         el.revSwitch.value = cfg.revSwitchPoint;
         el.revSwitchVal.textContent = cfg.revSwitchPoint;
@@ -354,6 +447,18 @@ export class SoundPage {
             deceleration: parseInt(el.deceleration.value),
             jakeBrakeEnabled: el.jakeBrake.checked,
             v8Mode: el.v8Mode.checked,
+            // Sound effects
+            airBrakeEnabled: el.airBrakeEnabled.checked,
+            airBrakeVolume: parseInt(el.airBrakeVolume.value),
+            reverseBeepEnabled: el.reverseBeepEnabled.checked,
+            reverseBeepVolume: parseInt(el.reverseBeepVolume.value),
+            gearShiftEnabled: el.gearShiftEnabled.checked,
+            gearShiftVolume: parseInt(el.gearShiftVolume.value),
+            turboEnabled: el.turboEnabled.checked,
+            turboVolume: parseInt(el.turboVolume.value),
+            wastegateEnabled: el.wastegateEnabled.checked,
+            wastegateVolume: parseInt(el.wastegateVolume.value),
+            // Advanced
             revSwitchPoint: parseInt(el.revSwitch.value),
             idleEndPoint: parseInt(el.idleEnd.value),
             knockStartPoint: parseInt(el.knockStart.value),
