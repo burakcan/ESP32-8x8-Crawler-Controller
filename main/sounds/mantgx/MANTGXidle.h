@@ -1,6 +1,6 @@
-const unsigned int sampleRate = 22050;
-const unsigned int sampleCount = 4826;
-const signed char samples[] = {//0
+const unsigned int mantgx_idleSampleRate = 22050;
+const unsigned int mantgx_idleSampleCount = 4826;
+const signed char mantgx_idleSamples[] = {//0
 0, -1, 1, 5, 10, 17, 25, 23, 21, 19, 16, 12, 5, 0, -5, -8, //16
 -2, 10, 14, 16, 19, 25, 33, 37, 37, 37, 30, 19, 12, 9, 4, -2, //32
 2, 10, 14, 14, 13, 13, 16, 15, 11, 10, 13, 21, 29, 34, 30, 25, //48

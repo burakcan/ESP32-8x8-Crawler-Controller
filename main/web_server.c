@@ -638,7 +638,8 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
         "\"rev\":%s,"
         "\"realistic\":%s,"
         "\"coastRate\":%d,"
-        "\"brakeForce\":%d"
+        "\"brakeForce\":%d,"
+        "\"motorCutoff\":%d"
         "}"
         "}",
         cfg->servos[0].min_us, cfg->servos[0].max_us, cfg->servos[0].subtrim, cfg->servos[0].trim, cfg->servos[0].reversed ? "true" : "false",
@@ -656,7 +657,8 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
         cfg->esc.reversed ? "true" : "false",
         cfg->esc.realistic_throttle ? "true" : "false",
         cfg->esc.coast_rate,
-        cfg->esc.brake_force
+        cfg->esc.brake_force,
+        cfg->esc.motor_cutoff
     );
 
     httpd_resp_set_type(req, "application/json");
@@ -767,6 +769,7 @@ static esp_err_t tuning_post_handler(httpd_req_t *req)
     if (parse_json_bool(buf, "realistic", &bval)) cfg.esc.realistic_throttle = bval;
     if (parse_json_int(buf, "coastRate", &val)) cfg.esc.coast_rate = val;
     if (parse_json_int(buf, "brakeForce", &val)) cfg.esc.brake_force = val;
+    if (parse_json_int(buf, "motorCutoff", &val)) cfg.esc.motor_cutoff = val;
 
     // Apply and save
     tuning_set_config(&cfg);
@@ -950,6 +953,10 @@ static esp_err_t sound_post_handler(httpd_req_t *req)
     if (parse_json_int(buf, "hornType", &val)) cfg.horn_type = (horn_type_t)val;
     if (parse_json_bool(buf, "modeSwitchEnabled", &bval)) cfg.mode_switch_sound_enabled = bval;
     if (parse_json_int(buf, "modeSwitchVolume", &val)) cfg.mode_switch_volume = val;
+
+    // Ensure magic and version are set correctly before saving
+    cfg.magic = SOUND_CONFIG_MAGIC;
+    cfg.version = SOUND_CONFIG_VERSION;
 
     // Apply configuration
     engine_sound_set_config(&cfg);

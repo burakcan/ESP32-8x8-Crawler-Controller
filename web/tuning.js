@@ -73,6 +73,8 @@ export class TuningPage {
                         <div class="hint">How long the crawler coasts. 0% = quick stop, 100% = long coast.</div>
                         ${this.renderSliderRow('esc-brake', 'Brake Force', 0, 100, 50, '%')}
                         <div class="hint">How hard active braking stops you. 0% = weak, 100% = instant stop.</div>
+                        ${this.renderSliderRow('esc-motor-cutoff', 'Motor Cutoff', 0, 300, 150, '')}
+                        <div class="hint">ESC deadband threshold. ESC stops outputting below this. Adjusts air brake timing. (~150 for 15%)</div>
                     </div>
                 </div>
 
@@ -182,6 +184,8 @@ export class TuningPage {
             escCoastNum: document.getElementById('esc-coast-num'),
             escBrake: document.getElementById('esc-brake'),
             escBrakeNum: document.getElementById('esc-brake-num'),
+            escMotorCutoff: document.getElementById('esc-motor-cutoff'),
+            escMotorCutoffNum: document.getElementById('esc-motor-cutoff-num'),
             resetBtn: document.getElementById('tuning-reset'),
             // Servo test elements
             servoTestActive: document.getElementById('servo-test-active'),
@@ -239,6 +243,7 @@ export class TuningPage {
         // Sync slider/input pairs for realistic throttle
         this.syncSliderAndInput(this.elements.escCoast, this.elements.escCoastNum);
         this.syncSliderAndInput(this.elements.escBrake, this.elements.escBrakeNum);
+        this.syncSliderAndInput(this.elements.escMotorCutoff, this.elements.escMotorCutoffNum);
 
         this.elements.escRealistic.addEventListener('change', () => this.scheduleAutoSave());
 
@@ -374,6 +379,10 @@ export class TuningPage {
                 this.elements.escBrake.value = data.esc.brakeForce;
                 this.elements.escBrakeNum.value = data.esc.brakeForce;
             }
+            if (data.esc.motorCutoff !== undefined) {
+                this.elements.escMotorCutoff.value = data.esc.motorCutoff;
+                this.elements.escMotorCutoffNum.value = data.esc.motorCutoff;
+            }
         }
     }
 
@@ -416,6 +425,7 @@ export class TuningPage {
         config.realistic = this.elements.escRealistic.checked;
         config.coastRate = parseInt(this.elements.escCoast.value);
         config.brakeForce = parseInt(this.elements.escBrake.value);
+        config.motorCutoff = parseInt(this.elements.escMotorCutoff.value);
 
         fetch('/api/tuning', {
             method: 'POST',

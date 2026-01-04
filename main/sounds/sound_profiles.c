@@ -22,15 +22,16 @@
 #include "unimog/UnimogU1000TurboRev.h"      // unimog_revSamples, unimog_revSampleCount, unimog_revSampleRate
 #include "unimog/UnimogU1000TurboKnock.h"    // unimog_knockSamples, unimog_knockSampleCount, unimog_knockSampleRate
 #include "unimog/UnimogU1000TurboJakeBrake.h"// unimog_jakeSamples, unimog_jakeSampleCount, unimog_jakeSampleRate
+#include "unimog/UnimogU1000Start.h"         // unimog_startSamples, unimog_startSampleCount, unimog_startSampleRate
 
 // ===========================================================================
 // MAN TGX - German truck
 // ===========================================================================
-#include "mantgx/mantgx_idle.h"      // mantgx_idleSamples, mantgx_idleSampleCount, mantgx_idleSampleRate
-#include "mantgx/mantgx_rev.h"       // mantgx_revSamples, mantgx_revSampleCount, mantgx_revSampleRate
-#include "mantgx/mantgx_knock.h"     // mantgx_knockSamples, mantgx_knockSampleCount, mantgx_knockSampleRate
-#include "mantgx/mantgx_start.h"     // mantgx_startSamples, mantgx_startSampleCount, mantgx_startSampleRate
-#include "mantgx/mantgx_jake.h"      // mantgx_jakeSamples, mantgx_jakeSampleCount, mantgx_jakeSampleRate
+#include "mantgx/MANTGXidle.h"       // mantgx_idleSamples, mantgx_idleSampleCount, mantgx_idleSampleRate
+#include "mantgx/MANTGXrev.h"        // mantgx_revSamples, mantgx_revSampleCount, mantgx_revSampleRate
+#include "mantgx/MANTGXknock2.h"     // mantgx_knockSamples, mantgx_knockSampleCount, mantgx_knockSampleRate
+#include "mantgx/MANTGXstart.h"      // mantgx_startSamples, mantgx_startSampleCount, mantgx_startSampleRate
+#include "mantgx/MANTGXjakebrake2.h" // mantgx_jakeSamples, mantgx_jakeSampleCount, mantgx_jakeSampleRate
 
 // ===========================================================================
 // Profile Definitions
@@ -89,9 +90,9 @@ static const sound_profile_def_t profiles[SOUND_PROFILE_COUNT] = {
             .sample_rate = unimog_knockSampleRate
         },
         .start = {
-            .samples = NULL,
-            .sample_count = 0,
-            .sample_rate = 0
+            .samples = (const int8_t*)unimog_startSamples,
+            .sample_count = unimog_startSampleCount,
+            .sample_rate = unimog_startSampleRate
         },
         .jake_brake = {
             .samples = (const int8_t*)unimog_jakeSamples,

@@ -1,6 +1,6 @@
-const unsigned int jakeBrakeSampleRate = 22050;
-const unsigned int jakeBrakeSampleCount = 4802;
-const signed char jakeBrakeSamples[] = {//0
+const unsigned int mantgx_jakeSampleRate = 22050;
+const unsigned int mantgx_jakeSampleCount = 4802;
+const signed char mantgx_jakeSamples[] = {//0
 0, 0, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0, 1, 1, //16
 2, 2, 3, 4, 4, 5, 6, 8, 9, 10, 11, 12, 14, 16, 18, 19, //32
 21, 23, 26, 28, 30, 31, 34, 36, 39, 41, 43, 45, 47, 50, 54, 56, //48

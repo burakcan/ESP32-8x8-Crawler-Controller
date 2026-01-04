@@ -1,6 +1,11 @@
-const unsigned int shiftingSampleRate = 22050;
-const unsigned int shiftingSampleCount = 4230;
-const signed char shiftingSamples[] = {//0
+/**
+ * MAN TGX Shifting Sound
+ * Variable names prefixed with mantgx_ to avoid conflicts
+ */
+
+const unsigned int mantgx_shiftingSampleRate = 22050;
+const unsigned int mantgx_shiftingSampleCount = 4230;
+const signed char mantgx_shiftingSamples[] = {//0
 0, -1, -1, -1, -1, -1, -1, 0, 0, 1, 1, -1, 0, 3, 5, 5, //16
 5, 4, 2, 0, 3, 1, -1, 1, 3, 4, 0, -1, -2, -2, 0, 1, //32
 0, 2, 0, -1, 1, -2, 0, -1, -9, -9, -9, -2, 0, -3, 2, 1, //48

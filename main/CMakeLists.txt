@@ -30,7 +30,7 @@ idf_component_register(
         "engine_sound.c"
         "mode_switch.c"
         "sounds/sound_profiles.c"
-    INCLUDE_DIRS "." "sounds" "sounds/tatra813" "sounds/detroit8v92" "sounds/cat3408"
+    INCLUDE_DIRS "." "sounds" "sounds/cat3408" "sounds/unimog" "sounds/mantgx" "sounds/effects"
     REQUIRES
         driver
         esp_driver_mcpwm

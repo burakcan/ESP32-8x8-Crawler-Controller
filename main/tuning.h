@@ -149,5 +149,19 @@ bool tuning_is_braking(void);
  */
 int8_t tuning_get_last_direction(void);
 
+/**
+ * @brief Check if motor is effectively stopped (below ESC cutoff threshold)
+ * The ESC has a deadband where it stops outputting power even though
+ * the simulated velocity hasn't reached zero yet.
+ * @return true if simulated velocity is below motor cutoff threshold
+ */
+bool tuning_is_motor_stopped(void);
+
+/**
+ * @brief Get motor cutoff threshold
+ * @return Motor cutoff value (0-1000)
+ */
+int16_t tuning_get_motor_cutoff(void);
+
 #endif // TUNING_H
 

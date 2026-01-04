@@ -59,6 +59,7 @@ void tuning_get_defaults(tuning_config_t *config)
     config->esc.realistic_throttle = TUNING_DEFAULT_REALISTIC;
     config->esc.coast_rate = TUNING_DEFAULT_COAST_RATE;
     config->esc.brake_force = TUNING_DEFAULT_BRAKE_FORCE;
+    config->esc.motor_cutoff = TUNING_DEFAULT_MOTOR_CUTOFF;
 }
 
 /**
@@ -100,6 +101,10 @@ static void tuning_migrate(tuning_config_t *old_config, uint32_t old_version)
     if (old_version >= 7) {
         // v7+ has brake_force
         new_config.esc.brake_force = old_config->esc.brake_force;
+    }
+    if (old_version >= 8) {
+        // v8+ has motor_cutoff
+        new_config.esc.motor_cutoff = old_config->esc.motor_cutoff;
     }
     // New fields in future versions will get defaults automatically
 
@@ -308,8 +313,6 @@ int16_t tuning_apply_realistic_throttle(int16_t throttle_input)
     if (coast_decel < 5) coast_decel = 5;
 
     // Brake force: 0 = weak brake, 100 = instant stop
-    // Scale from 5 (very weak) to 200 (instant)
-    // At 100Hz: 0% = 2 sec to stop, 100% = instant
     int16_t brake_strength = 5 + (esc->brake_force * 195) / 100;
 
     // Base acceleration rate
@@ -526,4 +529,16 @@ bool tuning_is_braking(void)
 int8_t tuning_get_last_direction(void)
 {
     return last_direction;
+}
+
+bool tuning_is_motor_stopped(void)
+{
+    // Motor is effectively stopped when simulated velocity is below ESC cutoff threshold
+    int16_t abs_velocity = (simulated_velocity < 0) ? -simulated_velocity : simulated_velocity;
+    return abs_velocity < current_config.esc.motor_cutoff;
+}
+
+int16_t tuning_get_motor_cutoff(void)
+{
+    return current_config.esc.motor_cutoff;
 }

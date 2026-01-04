@@ -39,10 +39,18 @@ typedef enum {
     HORN_TYPE_COUNT
 } horn_type_t;
 
+// Sound config magic number and version for NVS migration
+#define SOUND_CONFIG_MAGIC      0x534E4443  // "SNDC" in hex
+#define SOUND_CONFIG_VERSION    1           // Initial version with migration support
+
 /**
  * @brief Engine sound configuration
  */
 typedef struct {
+    // Version info (must be first for migration)
+    uint32_t magic;                     // Magic number to verify valid data
+    uint32_t version;                   // Config version for migration
+
     // Sound profile selection
     sound_profile_t profile;            // Selected sound profile
 

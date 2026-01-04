@@ -183,6 +183,7 @@ typedef struct {
     bool realistic_throttle;    // Enable realistic coasting/drag brake behavior
     uint8_t coast_rate;         // Coast deceleration rate (0-100, higher = slower coast)
     uint8_t brake_force;        // Active brake strength (0-100%, how hard braking stops you)
+    uint16_t motor_cutoff;      // ESC motor cutoff threshold (0-1000, ESC stops below this)
 } esc_tuning_t;
 
 // Complete tuning configuration
@@ -195,7 +196,7 @@ typedef struct {
 } tuning_config_t;
 
 #define TUNING_MAGIC            0x54554E45  // "TUNE" in hex
-#define TUNING_VERSION          7           // Bumped: drag_brake -> brake_force
+#define TUNING_VERSION          8           // Added motor_cutoff
 
 // Default tuning values
 #define TUNING_DEFAULT_SERVO_MIN        1000
@@ -215,6 +216,7 @@ typedef struct {
 #define TUNING_DEFAULT_REALISTIC        false   // Default to instant response (current behavior)
 #define TUNING_DEFAULT_COAST_RATE       50      // Medium coast speed (0=fast stop, 100=slow coast)
 #define TUNING_DEFAULT_BRAKE_FORCE      50      // Medium brake strength (0=weak, 100=instant stop)
+#define TUNING_DEFAULT_MOTOR_CUTOFF     150     // ESC deadband threshold (~15% of 1000)
 
 // ============================================================================
 // WIFI STATION MODE CONFIGURATION

@@ -98,7 +98,6 @@ static void process_control_loop(void)
     static bool aux3_was_pressed = false;
     static int64_t aux3_press_time = 0;
     static bool aux3_long_press_handled = false;
-    static bool wifi_enabled = false;
 
     bool aux3_pressed = (aux3_data.value > 400);  // Button is currently pressed (value range -1000 to +1000)
     int64_t now_ms = esp_timer_get_time() / 1000;
@@ -111,10 +110,11 @@ static void process_control_loop(void)
         // Button being held - check for long press (5 seconds)
         if (!aux3_long_press_handled && (now_ms - aux3_press_time) >= 5000) {
             // Long press detected - toggle WiFi
+            // Use actual WiFi state (may have been auto-enabled)
             aux3_long_press_handled = true;
-            wifi_enabled = !wifi_enabled;
+            bool wifi_currently_on = web_server_wifi_is_enabled();
 
-            if (wifi_enabled) {
+            if (!wifi_currently_on) {
                 sound_play(SOUND_WIFI_ON);
                 web_server_wifi_enable();
                 udp_log_init();
@@ -126,7 +126,7 @@ static void process_control_loop(void)
 
             // Set LED notification for 2 seconds
             wifi_switch_notify_until = (uint32_t)now_ms + 2000;
-            wifi_switch_notify_on = wifi_enabled;
+            wifi_switch_notify_on = !wifi_currently_on;
         }
     } else if (!aux3_pressed && aux3_was_pressed) {
         // Button just released
@@ -413,6 +413,7 @@ void app_main(void)
     ESP_LOGI(TAG, "║    Short press = Engine ignition         ║");
     ESP_LOGI(TAG, "║    Hold 5 sec  = WiFi toggle             ║");
     ESP_LOGI(TAG, "║  WiFi:   %s / %s         ║", WIFI_AP_SSID, WIFI_AP_PASS);
+    ESP_LOGI(TAG, "║  (WiFi auto-enables if no RC for 5 sec)  ║");
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
     
@@ -459,6 +460,10 @@ void app_main(void)
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t loop_period_ticks = pdMS_TO_TICKS(MAIN_LOOP_PERIOD_MS);
 
+    // Auto-WiFi: enable WiFi automatically if no RC signal for 5 seconds
+    bool auto_wifi_enabled = false;
+    #define AUTO_WIFI_TIMEOUT_MS 5000
+
     while (1) {
         // Check if calibration is running (can be started via web UI)
         bool calibrating = calibration_in_progress();
@@ -476,6 +481,26 @@ void app_main(void)
 
             // Normal operation
             process_control_loop();
+        }
+
+        // Auto-WiFi: enable WiFi if no RC signal detected for 5 seconds
+        // This allows configuration even when RC receiver is not connected
+        if (!auto_wifi_enabled && !web_server_wifi_is_enabled()) {
+            uint32_t signal_age = rc_input_signal_age_ms();
+            if (signal_age >= AUTO_WIFI_TIMEOUT_MS) {
+                ESP_LOGI(TAG, "No RC signal for %lu ms - enabling WiFi automatically",
+                         (unsigned long)signal_age);
+                auto_wifi_enabled = true;
+                sound_play(SOUND_WIFI_ON);
+                web_server_wifi_enable();
+                udp_log_init();
+                ota_update_init();
+
+                // Set LED notification for 2 seconds
+                uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+                wifi_switch_notify_until = now_ms + 2000;
+                wifi_switch_notify_on = true;
+            }
         }
 
         // Check for WiFi STA connection state change (only if WiFi enabled)

@@ -1,6 +1,6 @@
-const unsigned int revSampleRate = 22050;
-const unsigned int revSampleCount = 4802;
-const signed char revSamples[] = {//0
+const unsigned int mantgx_revSampleRate = 22050;
+const unsigned int mantgx_revSampleCount = 4802;
+const signed char mantgx_revSamples[] = {//0
 0, -1, -2, -2, -1, -1, 3, 5, 6, 7, 8, 8, 10, 11, 12, 13, //16
 14, 17, 19, 20, 22, 24, 26, 30, 32, 34, 37, 39, 41, 43, 45, 45, //32
 46, 47, 49, 50, 51, 53, 56, 58, 60, 62, 65, 67, 69, 71, 72, 74, //48

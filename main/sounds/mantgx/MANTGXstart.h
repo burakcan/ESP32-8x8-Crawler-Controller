@@ -1,6 +1,6 @@
-const unsigned int startSampleRate = 22050;
-const unsigned int startSampleCount = 66106;
-const signed char startSamples[] = {//0
+const unsigned int mantgx_startSampleRate = 22050;
+const unsigned int mantgx_startSampleCount = 66106;
+const signed char mantgx_startSamples[] = {//0
 0, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -2, -2, //16
 -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, //32
 -2, -2, -2, -2, -2, -2, -2, -2, -3, -4, -3, -4, -3, -4, -3, -4, //48
