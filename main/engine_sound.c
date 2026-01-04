@@ -42,9 +42,6 @@
 #include "sounds/effects/mantge_horn.h"
 #include "sounds/effects/la_cucaracha.h"
 #include "sounds/mode_switch_sound.h"
-// MAN TGX-specific effects
-#include "sounds/mantgx/MANTGXshifting.h"
-#include "sounds/mantgx/MANTGXwastegate2.h"
 
 static const char *TAG = "ENGINE_SND";
 
@@ -152,7 +149,6 @@ static uint32_t idle_sample_pos = 0;
 static uint32_t rev_sample_pos = 0;
 static uint32_t knock_sample_pos = 0;
 static uint32_t jake_sample_pos = 0;
-static uint32_t start_sample_pos = 0;
 
 // Sound effect playback state
 static bool air_brake_trigger = false;
@@ -479,14 +475,15 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
         }
 
         // Gear shift clunk sound (one-shot on gear change)
-        // Use profile-specific sound if available (MAN TGX has its own shifting sound)
+        // Use profile-specific sound if available, otherwise generic fallback
         if (gear_shift_sound_trigger && config.gear_shift_enabled) {
             const signed char *shift_samples;
             uint32_t shift_count;
 
-            if (config.profile == SOUND_PROFILE_MAN_TGX) {
-                shift_samples = mantgx_shiftingSamples;
-                shift_count = mantgx_shiftingSampleCount;
+            // Profile-based effect lookup with generic fallback
+            if (current_profile->shifting.samples != NULL) {
+                shift_samples = (const signed char*)current_profile->shifting.samples;
+                shift_count = current_profile->shifting.sample_count;
             } else {
                 shift_samples = effect_gearShiftSamples;
                 shift_count = effect_gearShiftSampleCount;
@@ -505,14 +502,15 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
         }
 
         // Wastegate/blowoff sound (one-shot after rapid throttle drop)
-        // Use profile-specific sound if available (MAN TGX has its own wastegate sound)
+        // Use profile-specific sound if available, otherwise generic fallback
         if (wastegate_trigger && config.wastegate_enabled) {
             const signed char *wg_samples;
             uint32_t wg_count;
 
-            if (config.profile == SOUND_PROFILE_MAN_TGX) {
-                wg_samples = mantgx_wastegateSamples;
-                wg_count = mantgx_wastegateSampleCount;
+            // Profile-based effect lookup with generic fallback
+            if (current_profile->wastegate.samples != NULL) {
+                wg_samples = (const signed char*)current_profile->wastegate.samples;
+                wg_count = current_profile->wastegate.sample_count;
             } else {
                 wg_samples = effect_wastegateSamples;
                 wg_count = effect_wastegateSampleCount;
@@ -1146,10 +1144,15 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         }
     }
 
-    // Determine if we're in reverse gear
-    // Use tuning layer's direction tracking for more accurate state
+    // Determine if we're in reverse gear for reverse beep
+    // Beep should play when:
+    // 1. Actually moving backwards, OR
+    // 2. Stopped but actively accelerating into reverse
+    // Beep should NOT play when braking to a stop (even from reverse)
     int8_t direction = tuning_get_last_direction();
-    bool in_reverse = (direction == -1) || (moving_reverse && !is_braking);
+    bool stopped = (abs_speed < 50);
+    bool accelerating_into_reverse = stopped && (direction == -1) && !is_braking && (throttle < -100);
+    bool in_reverse = moving_reverse || accelerating_into_reverse;
 
     // =========================================================================
     // ENGINE LOAD CALCULATION

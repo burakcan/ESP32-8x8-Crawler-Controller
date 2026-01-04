@@ -23,6 +23,7 @@
 #include "unimog/UnimogU1000TurboKnock.h"    // unimog_knockSamples, unimog_knockSampleCount, unimog_knockSampleRate
 #include "unimog/UnimogU1000TurboJakeBrake.h"// unimog_jakeSamples, unimog_jakeSampleCount, unimog_jakeSampleRate
 #include "unimog/UnimogU1000Start.h"         // unimog_startSamples, unimog_startSampleCount, unimog_startSampleRate
+#include "unimog/UnimogU1000TurboWastegate.h"// unimog_wastegateSamples, unimog_wastegateSampleCount, unimog_wastegateSampleRate
 
 // ===========================================================================
 // MAN TGX - German truck
@@ -32,6 +33,8 @@
 #include "mantgx/MANTGXknock2.h"     // mantgx_knockSamples, mantgx_knockSampleCount, mantgx_knockSampleRate
 #include "mantgx/MANTGXstart.h"      // mantgx_startSamples, mantgx_startSampleCount, mantgx_startSampleRate
 #include "mantgx/MANTGXjakebrake2.h" // mantgx_jakeSamples, mantgx_jakeSampleCount, mantgx_jakeSampleRate
+#include "mantgx/MANTGXshifting.h"   // mantgx_shiftingSamples, mantgx_shiftingSampleCount, mantgx_shiftingSampleRate
+#include "mantgx/MANTGXwastegate2.h" // mantgx_wastegateSamples, mantgx_wastegateSampleCount, mantgx_wastegateSampleRate
 
 // ===========================================================================
 // Profile Definitions
@@ -68,7 +71,10 @@ static const sound_profile_def_t profiles[SOUND_PROFILE_COUNT] = {
             .sample_rate = 0
         },
         .has_jake_brake = false,
-        .cylinder_count = 8
+        .cylinder_count = 8,
+        // Effects: CAT 3408 uses generic fallbacks
+        .shifting = { .samples = NULL, .sample_count = 0, .sample_rate = 0 },
+        .wastegate = { .samples = NULL, .sample_count = 0, .sample_rate = 0 }
     },
     // UNIMOG U1000 (index 1)
     {
@@ -100,7 +106,14 @@ static const sound_profile_def_t profiles[SOUND_PROFILE_COUNT] = {
             .sample_rate = unimog_jakeSampleRate
         },
         .has_jake_brake = true,
-        .cylinder_count = 6
+        .cylinder_count = 6,
+        // Effects: Unimog has specific wastegate, uses generic shifting
+        .shifting = { .samples = NULL, .sample_count = 0, .sample_rate = 0 },
+        .wastegate = {
+            .samples = (const int8_t*)unimog_wastegateSamples,
+            .sample_count = unimog_wastegateSampleCount,
+            .sample_rate = unimog_wastegateSampleRate
+        }
     },
     // MAN TGX (index 2)
     {
@@ -132,7 +145,18 @@ static const sound_profile_def_t profiles[SOUND_PROFILE_COUNT] = {
             .sample_rate = mantgx_jakeSampleRate
         },
         .has_jake_brake = true,
-        .cylinder_count = 6
+        .cylinder_count = 6,
+        // Effects: MAN TGX has specific shifting and wastegate
+        .shifting = {
+            .samples = (const int8_t*)mantgx_shiftingSamples,
+            .sample_count = mantgx_shiftingSampleCount,
+            .sample_rate = mantgx_shiftingSampleRate
+        },
+        .wastegate = {
+            .samples = (const int8_t*)mantgx_wastegateSamples,
+            .sample_count = mantgx_wastegateSampleCount,
+            .sample_rate = mantgx_wastegateSampleRate
+        }
     }
 };
 
