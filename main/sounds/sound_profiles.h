@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
     const char *name;
     const char *description;
+    // Engine sounds (required)
     sound_sample_t idle;
     sound_sample_t rev;
     sound_sample_t knock;
@@ -39,6 +40,9 @@ typedef struct {
     sound_sample_t jake_brake;
     bool has_jake_brake;
     uint8_t cylinder_count;         // For knock interval
+    // Effect sounds (optional - NULL samples means use generic fallback)
+    sound_sample_t shifting;        // Gear shift sound
+    sound_sample_t wastegate;       // Wastegate/blowoff sound
 } sound_profile_def_t;
 
 // Get profile definition by ID
