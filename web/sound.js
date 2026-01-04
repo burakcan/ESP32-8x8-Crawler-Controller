@@ -138,15 +138,6 @@ export class SoundPage {
                         </div>
                         <div class="effect-row">
                             <label class="toggle-inline">
-                                <input type="checkbox" id="turbo-enabled" checked/>
-                                <span class="toggle-slider-small"></span>
-                            </label>
-                            <span class="label">Turbo Whistle</span>
-                            <input type="range" id="turbo-volume" min="0" max="100" value="70" class="effect-slider"/>
-                            <span class="value" id="turbo-volume-val">70%</span>
-                        </div>
-                        <div class="effect-row">
-                            <label class="toggle-inline">
                                 <input type="checkbox" id="wastegate-enabled" checked/>
                                 <span class="toggle-slider-small"></span>
                             </label>
@@ -155,6 +146,40 @@ export class SoundPage {
                             <span class="value" id="wastegate-volume-val">70%</span>
                         </div>
                         <div class="hint">Effects trigger automatically based on driving conditions</div>
+                    </div>
+                </div>
+
+                <!-- Horn & Mode Switch Card -->
+                <div class="card">
+                    <h2>Horn & Mode Switch</h2>
+                    <div class="effects-container">
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="horn-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Horn</span>
+                            <input type="range" id="horn-volume" min="0" max="100" value="80" class="effect-slider"/>
+                            <span class="value" id="horn-volume-val">80%</span>
+                        </div>
+                        <div class="row" style="margin-top: 8px; margin-bottom: 8px;">
+                            <span class="label">Horn Type</span>
+                            <select id="horn-type" class="select">
+                                <option value="0">Truck Horn</option>
+                                <option value="1">MAN TGE Horn</option>
+                                <option value="2">La Cucaracha</option>
+                            </select>
+                        </div>
+                        <div class="effect-row">
+                            <label class="toggle-inline">
+                                <input type="checkbox" id="mode-switch-enabled" checked/>
+                                <span class="toggle-slider-small"></span>
+                            </label>
+                            <span class="label">Mode Switch Sound</span>
+                            <input type="range" id="mode-switch-volume" min="0" max="100" value="80" class="effect-slider"/>
+                            <span class="value" id="mode-switch-volume-val">80%</span>
+                        </div>
+                        <div class="hint">Horn: CH3 button. Mode switch: CH4 momentary.</div>
                     </div>
                 </div>
 
@@ -234,12 +259,17 @@ export class SoundPage {
             gearShiftEnabled: document.getElementById('gear-shift-enabled'),
             gearShiftVolume: document.getElementById('gear-shift-volume'),
             gearShiftVolumeVal: document.getElementById('gear-shift-volume-val'),
-            turboEnabled: document.getElementById('turbo-enabled'),
-            turboVolume: document.getElementById('turbo-volume'),
-            turboVolumeVal: document.getElementById('turbo-volume-val'),
             wastegateEnabled: document.getElementById('wastegate-enabled'),
             wastegateVolume: document.getElementById('wastegate-volume'),
             wastegateVolumeVal: document.getElementById('wastegate-volume-val'),
+            // Horn & Mode Switch
+            hornEnabled: document.getElementById('horn-enabled'),
+            hornVolume: document.getElementById('horn-volume'),
+            hornVolumeVal: document.getElementById('horn-volume-val'),
+            hornType: document.getElementById('horn-type'),
+            modeSwitchEnabled: document.getElementById('mode-switch-enabled'),
+            modeSwitchVolume: document.getElementById('mode-switch-volume'),
+            modeSwitchVolumeVal: document.getElementById('mode-switch-volume-val'),
             // Advanced
             advancedToggle: document.getElementById('advanced-toggle'),
             advancedContent: document.getElementById('advanced-content'),
@@ -269,8 +299,10 @@ export class SoundPage {
         this.setupSlider('airBrakeVolume', '%');
         this.setupSlider('reverseBeepVolume', '%');
         this.setupSlider('gearShiftVolume', '%');
-        this.setupSlider('turboVolume', '%');
         this.setupSlider('wastegateVolume', '%');
+        // Horn & Mode Switch
+        this.setupSlider('hornVolume', '%');
+        this.setupSlider('modeSwitchVolume', '%');
         // Advanced
         this.setupSlider('revSwitch', '');
         this.setupSlider('idleEnd', '');
@@ -408,12 +440,18 @@ export class SoundPage {
         el.gearShiftEnabled.checked = cfg.gearShiftEnabled;
         el.gearShiftVolume.value = cfg.gearShiftVolume;
         el.gearShiftVolumeVal.textContent = cfg.gearShiftVolume + '%';
-        el.turboEnabled.checked = cfg.turboEnabled;
-        el.turboVolume.value = cfg.turboVolume;
-        el.turboVolumeVal.textContent = cfg.turboVolume + '%';
         el.wastegateEnabled.checked = cfg.wastegateEnabled;
         el.wastegateVolume.value = cfg.wastegateVolume;
         el.wastegateVolumeVal.textContent = cfg.wastegateVolume + '%';
+
+        // Horn & Mode Switch
+        el.hornEnabled.checked = cfg.hornEnabled;
+        el.hornVolume.value = cfg.hornVolume;
+        el.hornVolumeVal.textContent = cfg.hornVolume + '%';
+        el.hornType.value = cfg.hornType;
+        el.modeSwitchEnabled.checked = cfg.modeSwitchEnabled;
+        el.modeSwitchVolume.value = cfg.modeSwitchVolume;
+        el.modeSwitchVolumeVal.textContent = cfg.modeSwitchVolume + '%';
 
         // Advanced
         el.revSwitch.value = cfg.revSwitchPoint;
@@ -454,10 +492,14 @@ export class SoundPage {
             reverseBeepVolume: parseInt(el.reverseBeepVolume.value),
             gearShiftEnabled: el.gearShiftEnabled.checked,
             gearShiftVolume: parseInt(el.gearShiftVolume.value),
-            turboEnabled: el.turboEnabled.checked,
-            turboVolume: parseInt(el.turboVolume.value),
             wastegateEnabled: el.wastegateEnabled.checked,
             wastegateVolume: parseInt(el.wastegateVolume.value),
+            // Horn & Mode Switch
+            hornEnabled: el.hornEnabled.checked,
+            hornVolume: parseInt(el.hornVolume.value),
+            hornType: parseInt(el.hornType.value),
+            modeSwitchEnabled: el.modeSwitchEnabled.checked,
+            modeSwitchVolume: parseInt(el.modeSwitchVolume.value),
             // Advanced
             revSwitchPoint: parseInt(el.revSwitch.value),
             idleEndPoint: parseInt(el.idleEnd.value),

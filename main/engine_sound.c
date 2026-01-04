@@ -36,8 +36,14 @@
 #include "sounds/effects/air_brake.h"
 #include "sounds/effects/reverse_beep.h"
 #include "sounds/effects/gear_shift.h"
-#include "sounds/effects/turbo_whistle.h"
 #include "sounds/effects/wastegate.h"
+#include "sounds/effects/truck_horn.h"
+#include "sounds/effects/mantge_horn.h"
+#include "sounds/effects/la_cucaracha.h"
+#include "sounds/mode_switch_sound.h"
+// MAN TGX-specific effects
+#include "sounds/mantgx/mantgx_shifting.h"
+#include "sounds/mantgx/mantgx_wastegate.h"
 
 static const char *TAG = "ENGINE_SND";
 
@@ -77,10 +83,15 @@ static engine_sound_config_t config = {
     .reverse_beep_volume = 70,
     .gear_shift_enabled = true,
     .gear_shift_volume = 70,
-    .turbo_enabled = true,
-    .turbo_volume = 70,
     .wastegate_enabled = true,
-    .wastegate_volume = 70
+    .wastegate_volume = 70,
+    // Horn settings
+    .horn_enabled = true,
+    .horn_type = HORN_TYPE_TRUCK,
+    .horn_volume = 80,
+    // Mode switch sound settings
+    .mode_switch_sound_enabled = true,
+    .mode_switch_volume = 80
 };
 
 // Engine state
@@ -150,14 +161,19 @@ static uint32_t reverse_beep_sample_pos = 0;
 static bool gear_shift_sound_trigger = false;
 static uint32_t gear_shift_sound_sample_pos = 0;
 
-static bool turbo_playing = false;
-static uint32_t turbo_sample_pos = 0;
-static uint16_t turbo_volume_faded = 0;  // Throttle-dependent turbo volume
 
 static bool wastegate_trigger = false;
 static uint32_t wastegate_sample_pos = 0;
 static int64_t wastegate_lockout_time = 0;  // Cooldown timer
 static int16_t prev_throttle_for_wastegate = 0;  // Track throttle changes
+
+// Mode switch sound (air shift sound for steering mode changes)
+static bool mode_switch_trigger = false;
+static uint32_t mode_switch_sample_pos = 0;
+
+// Horn sound (looping while button held)
+static bool horn_active = false;
+static uint32_t horn_sample_pos = 0;
 
 // I2S handle (shared with sound.c - we'll get it from there)
 extern i2s_chan_handle_t tx_handle;
@@ -460,10 +476,22 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
         }
 
         // Gear shift clunk sound (one-shot on gear change)
+        // Use profile-specific sound if available (MAN TGX has its own shifting sound)
         if (gear_shift_sound_trigger && config.gear_shift_enabled) {
+            const signed char *shift_samples;
+            uint32_t shift_count;
+
+            if (config.profile == SOUND_PROFILE_MAN_TGX) {
+                shift_samples = mantgx_shiftingSamples;
+                shift_count = mantgx_shiftingSampleCount;
+            } else {
+                shift_samples = effect_gearShiftSamples;
+                shift_count = effect_gearShiftSampleCount;
+            }
+
             uint32_t idx = gear_shift_sound_sample_pos >> 16;
-            if (idx < effect_gearShiftSampleCount) {
-                int16_t sample = ((int16_t)effect_gearShiftSamples[idx]) << 8;
+            if (idx < shift_count) {
+                int16_t sample = ((int16_t)shift_samples[idx]) << 8;
                 int32_t vol = (config.gear_shift_volume * config.master_volume) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
                 gear_shift_sound_sample_pos += 0x10000;  // Normal rate
@@ -473,24 +501,23 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             }
         }
 
-        // Turbo whistle sound (looping, volume varies with throttle)
-        if (turbo_playing && config.turbo_enabled) {
-            uint32_t idx = turbo_sample_pos >> 16;
-            if (idx < effect_turboSampleCount) {
-                int16_t sample = ((int16_t)effect_turboSamples[idx]) << 8;
-                int32_t vol = (config.turbo_volume * turbo_volume_faded * config.master_volume) / 10000;
-                mix += ((int32_t)sample * vol) >> 8;
-                turbo_sample_pos += 0x10000;  // Normal rate
-            } else {
-                turbo_sample_pos = 0;  // Loop
-            }
-        }
-
         // Wastegate/blowoff sound (one-shot after rapid throttle drop)
+        // Use profile-specific sound if available (MAN TGX has its own wastegate sound)
         if (wastegate_trigger && config.wastegate_enabled) {
+            const signed char *wg_samples;
+            uint32_t wg_count;
+
+            if (config.profile == SOUND_PROFILE_MAN_TGX) {
+                wg_samples = mantgx_wastegateSamples;
+                wg_count = mantgx_wastegateSampleCount;
+            } else {
+                wg_samples = effect_wastegateSamples;
+                wg_count = effect_wastegateSampleCount;
+            }
+
             uint32_t idx = wastegate_sample_pos >> 16;
-            if (idx < effect_wastegateSampleCount) {
-                int16_t sample = ((int16_t)effect_wastegateSamples[idx]) << 8;
+            if (idx < wg_count) {
+                int16_t sample = ((int16_t)wg_samples[idx]) << 8;
                 // RPM-dependent wastegate volume (louder at higher RPM)
                 int32_t rpm_vol = 50 + (current_rpm * 50 / MAX_RPM);  // 50-100%
                 int32_t vol = (config.wastegate_volume * rpm_vol * config.master_volume) / 10000;
@@ -499,6 +526,62 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             } else {
                 wastegate_trigger = false;
                 wastegate_sample_pos = 0;
+            }
+        }
+
+        // Mode switch sound (one-shot air shift sound for steering mode changes)
+        if (mode_switch_trigger && config.mode_switch_sound_enabled) {
+            uint32_t idx = mode_switch_sample_pos >> 16;
+            if (idx < modeSwitchSampleCount) {
+                int16_t sample = ((int16_t)modeSwitchSamples[idx]) << 8;
+                int32_t vol = (config.mode_switch_volume * config.master_volume) / 100;
+                mix += ((int32_t)sample * vol) >> 8;
+                mode_switch_sample_pos += 0x10000;  // Normal rate
+            } else {
+                mode_switch_trigger = false;
+                mode_switch_sample_pos = 0;
+            }
+        }
+
+        // Horn sound (looping while button held)
+        if (horn_active && config.horn_enabled) {
+            const signed char *horn_samples;
+            uint32_t horn_count, horn_loop_begin, horn_loop_end;
+
+            // Select horn type
+            switch (config.horn_type) {
+                case HORN_TYPE_MANTGE:
+                    horn_samples = mantgeHornSamples;
+                    horn_count = mantgeHornSampleCount;
+                    horn_loop_begin = mantgeHornLoopBegin;
+                    horn_loop_end = mantgeHornLoopEnd;
+                    break;
+                case HORN_TYPE_CUCARACHA:
+                    horn_samples = cucarachaSamples;
+                    horn_count = cucarachaSampleCount;
+                    horn_loop_begin = cucarachaLoopBegin;
+                    horn_loop_end = cucarachaLoopEnd;
+                    break;
+                default:  // HORN_TYPE_TRUCK
+                    horn_samples = truckHornSamples;
+                    horn_count = truckHornSampleCount;
+                    horn_loop_begin = truckHornLoopBegin;
+                    horn_loop_end = truckHornLoopEnd;
+                    break;
+            }
+
+            uint32_t idx = horn_sample_pos >> 16;
+            if (idx < horn_count) {
+                int16_t sample = ((int16_t)horn_samples[idx]) << 8;
+                int32_t vol = (config.horn_volume * config.master_volume) / 100;
+                mix += ((int32_t)sample * vol) >> 8;
+                horn_sample_pos += 0x10000;  // Normal rate
+
+                // Loop within the loop region
+                uint32_t next_idx = horn_sample_pos >> 16;
+                if (next_idx >= horn_loop_end) {
+                    horn_sample_pos = horn_loop_begin << 16;
+                }
             }
         }
 
@@ -770,9 +853,6 @@ esp_err_t engine_sound_init(void) {
     reverse_beep_sample_pos = 0;
     gear_shift_sound_trigger = false;
     gear_shift_sound_sample_pos = 0;
-    turbo_playing = false;
-    turbo_sample_pos = 0;
-    turbo_volume_faded = 0;
     wastegate_trigger = false;
     wastegate_sample_pos = 0;
     wastegate_lockout_time = 0;
@@ -1108,7 +1188,6 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
 
     // Air brake: trigger when coming to a stop from moving
     // Triggers when speed drops from >100 to <30
-    static int16_t prev_vehicle_speed = 0;
     static int16_t peak_vehicle_speed = 0;  // Track highest speed reached
 
     // Track peak speed while moving
@@ -1132,8 +1211,6 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         peak_vehicle_speed = 0;
     }
 
-    prev_vehicle_speed = vehicle_speed;
-
     // Reverse beep: play when in reverse and engine is running
     // Reference: loops continuously while escInReverse is true
     if (in_reverse && engine_state == ENGINE_RUNNING) {
@@ -1151,35 +1228,7 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         ESP_LOGI(TAG, "Gear shift sound triggered");
     }
 
-    // Turbo whistle: active when throttle is high, volume depends on throttle
-    // Reference: turbo sound volume increases with throttle, loops continuously
-    if (effective_throttle > 100) {
-        turbo_playing = true;
-        // Fade turbo volume based on throttle (100-500 throttle maps to 0-100 volume)
-        int16_t target_turbo_vol = ((effective_throttle - 100) * 100) / 400;
-        if (target_turbo_vol > 100) target_turbo_vol = 100;
-        // Smooth fade
-        if (turbo_volume_faded < target_turbo_vol) {
-            turbo_volume_faded += 2;
-            if (turbo_volume_faded > target_turbo_vol) turbo_volume_faded = target_turbo_vol;
-        } else if (turbo_volume_faded > target_turbo_vol) {
-            turbo_volume_faded -= 2;
-            if (turbo_volume_faded < target_turbo_vol) turbo_volume_faded = target_turbo_vol;
-        }
-    } else {
-        // Fade out turbo when throttle is low
-        if (turbo_volume_faded > 2) {
-            turbo_volume_faded -= 2;
-        } else {
-            turbo_volume_faded = 0;
-        }
-        if (turbo_volume_faded == 0) {
-            turbo_playing = false;
-            turbo_sample_pos = 0;
-        }
-    }
-
-    // Wastegate/blowoff: trigger after rapid throttle drop while turbo was spooling
+    // Wastegate/blowoff: trigger after rapid throttle drop from high throttle
     // Triggers when throttle drops by >80 from a high value, with 1 second cooldown
     if (prev_throttle_for_wastegate > 150 &&
         prev_throttle_for_wastegate - effective_throttle > 80 &&
@@ -1303,4 +1352,25 @@ uint8_t engine_sound_get_gear(void) {
 
 int16_t engine_sound_get_load(void) {
     return engine_load;
+}
+
+void engine_sound_play_mode_switch(void) {
+    // Trigger the air shift sound for mode change feedback
+    // Only if engine is running (otherwise use beep from sound.c)
+    if (engine_state == ENGINE_RUNNING) {
+        mode_switch_trigger = true;
+        mode_switch_sample_pos = 0;
+    }
+}
+
+void engine_sound_set_horn(bool active) {
+    if (active && !horn_active) {
+        // Starting horn - reset sample position
+        horn_sample_pos = 0;
+    }
+    horn_active = active;
+}
+
+bool engine_sound_is_horn_active(void) {
+    return horn_active;
 }

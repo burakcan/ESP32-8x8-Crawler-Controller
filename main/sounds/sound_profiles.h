@@ -17,7 +17,7 @@
 typedef enum {
     SOUND_PROFILE_CAT_3408 = 0,          // Caterpillar V8 diesel
     SOUND_PROFILE_UNIMOG_U1000,          // Mercedes Unimog U1000 turbo diesel
-    SOUND_PROFILE_MAN_KAT,               // MAN KAT military truck
+    SOUND_PROFILE_MAN_TGX,               // MAN TGX truck
     SOUND_PROFILE_COUNT
 } sound_profile_t;
 

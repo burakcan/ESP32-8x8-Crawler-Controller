@@ -24,13 +24,13 @@
 #include "unimog/UnimogU1000TurboJakeBrake.h"// unimog_jakeSamples, unimog_jakeSampleCount, unimog_jakeSampleRate
 
 // ===========================================================================
-// MAN KAT - German military truck
+// MAN TGX - German truck
 // ===========================================================================
-#include "mankat/ManKatIdle.h"      // mankat_idleSamples, mankat_idleSampleCount, mankat_idleSampleRate
-#include "mankat/ManKatRev.h"       // mankat_revSamples, mankat_revSampleCount, mankat_revSampleRate
-#include "mankat/ManKatKnock.h"     // mankat_knockSamples, mankat_knockSampleCount, mankat_knockSampleRate
-#include "mankat/ManKatStart.h"     // mankat_startSamples, mankat_startSampleCount, mankat_startSampleRate
-#include "mankat/ManKatJakebrake.h" // mankat_jakeSamples, mankat_jakeSampleCount, mankat_jakeSampleRate
+#include "mantgx/mantgx_idle.h"      // mantgx_idleSamples, mantgx_idleSampleCount, mantgx_idleSampleRate
+#include "mantgx/mantgx_rev.h"       // mantgx_revSamples, mantgx_revSampleCount, mantgx_revSampleRate
+#include "mantgx/mantgx_knock.h"     // mantgx_knockSamples, mantgx_knockSampleCount, mantgx_knockSampleRate
+#include "mantgx/mantgx_start.h"     // mantgx_startSamples, mantgx_startSampleCount, mantgx_startSampleRate
+#include "mantgx/mantgx_jake.h"      // mantgx_jakeSamples, mantgx_jakeSampleCount, mantgx_jakeSampleRate
 
 // ===========================================================================
 // Profile Definitions
@@ -101,37 +101,37 @@ static const sound_profile_def_t profiles[SOUND_PROFILE_COUNT] = {
         .has_jake_brake = true,
         .cylinder_count = 6
     },
-    // MAN KAT (index 2)
+    // MAN TGX (index 2)
     {
-        .name = "MAN KAT",
-        .description = "German military truck diesel",
+        .name = "MAN TGX",
+        .description = "German truck diesel",
         .idle = {
-            .samples = (const int8_t*)mankat_idleSamples,
-            .sample_count = mankat_idleSampleCount,
-            .sample_rate = mankat_idleSampleRate
+            .samples = (const int8_t*)mantgx_idleSamples,
+            .sample_count = mantgx_idleSampleCount,
+            .sample_rate = mantgx_idleSampleRate
         },
         .rev = {
-            .samples = (const int8_t*)mankat_revSamples,
-            .sample_count = mankat_revSampleCount,
-            .sample_rate = mankat_revSampleRate
+            .samples = (const int8_t*)mantgx_revSamples,
+            .sample_count = mantgx_revSampleCount,
+            .sample_rate = mantgx_revSampleRate
         },
         .knock = {
-            .samples = (const int8_t*)mankat_knockSamples,
-            .sample_count = mankat_knockSampleCount,
-            .sample_rate = mankat_knockSampleRate
+            .samples = (const int8_t*)mantgx_knockSamples,
+            .sample_count = mantgx_knockSampleCount,
+            .sample_rate = mantgx_knockSampleRate
         },
         .start = {
-            .samples = (const int8_t*)mankat_startSamples,
-            .sample_count = mankat_startSampleCount,
-            .sample_rate = mankat_startSampleRate
+            .samples = (const int8_t*)mantgx_startSamples,
+            .sample_count = mantgx_startSampleCount,
+            .sample_rate = mantgx_startSampleRate
         },
         .jake_brake = {
-            .samples = (const int8_t*)mankat_jakeSamples,
-            .sample_count = mankat_jakeSampleCount,
-            .sample_rate = mankat_jakeSampleRate
+            .samples = (const int8_t*)mantgx_jakeSamples,
+            .sample_count = mantgx_jakeSampleCount,
+            .sample_rate = mantgx_jakeSampleRate
         },
         .has_jake_brake = true,
-        .cylinder_count = 8
+        .cylinder_count = 6
     }
 };
 
