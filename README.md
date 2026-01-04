@@ -19,6 +19,8 @@ ESP32-S3 based controller for an 8x8 RC crawler with multi-axle steering support
 - **WiFi STA Mode** - Connect to existing WiFi network
 - **Persistent Storage** - Calibration and tuning saved to flash (NVS)
 - **RGB Status LED** - WS2812 LED with colorful effects
+- **Engine Sound** - Realistic diesel engine sounds with multiple profiles
+- **Horn** - Selectable horn sounds (Truck Horn, MAN KAT Horn)
 - **UDP Logging** - Wireless debug logging over UDP
 
 ## Hardware Setup
@@ -26,13 +28,13 @@ ESP32-S3 based controller for an 8x8 RC crawler with multi-axle steering support
 ### Pin Configuration
 
 | Function | GPIO | Description |
-| ----------- | ---- | ------------------------------ |
+| ----------- | ---- | -------------------------------- |
 | RC Steering | 6 | Channel 1 input |
 | RC Throttle | 5 | Channel 2 input |
-| RC Aux1 | 4 | Channel 3 input (mode select) |
-| RC Aux2 | 3 | Channel 4 input |
-| RC Aux3 | 2 | Channel 5 input (reserved) |
-| RC Aux4 | 1 | Channel 6 input (reserved) |
+| RC Aux1 | 4 | Channel 3 input (horn) |
+| RC Aux2 | 3 | Channel 4 input (mode switch) |
+| RC Aux3 | 2 | Channel 5 input (engine/WiFi) |
+| RC Aux4 | 1 | Channel 6 input (throttle mode) |
 | ESC | 12 | Motor ESC signal output |
 | Servo A1 | 8 | Axle 1 (front) servo |
 | Servo A2 | 9 | Axle 2 servo |
@@ -150,18 +152,21 @@ THR:+500 STR:-200 | ESC:1750 | Mode:0
 
 ### Mode Switching
 
-**Option 1: Web UI** - Tap mode buttons in the dashboard. Click "Auto" to return to AUX control.
+**Option 1: Web UI** - Tap mode buttons in the dashboard. Click "Auto" to return to RC control.
 
-**Option 2: AUX channels** - Use transmitter toggle switches:
+**Option 2: Channel 4 Momentary Button** - Configure CH4 as a momentary button on your transmitter:
 
-| AUX1 | AUX2 | Mode     | Description              |
-| ---- | ---- | -------- | ------------------------ |
-| OFF  | OFF  | Front    | Normal car-like steering |
-| ON   | OFF  | All Axle | Tight turns              |
-| OFF  | ON   | Crab     | Move sideways            |
-| ON   | ON   | Rear     | Rear axles steer         |
+| Press Pattern | Action |
+| ------------- | ------ |
+| Single press | Toggle between Front and All-Axle steering |
+| Double press | Switch to Crab mode |
+| Triple press | Switch to Rear-only steering |
 
-UI override takes priority. Click "Auto" in the web UI to let AUX switches control modes again.
+**Returning from special modes:** When in Crab or Rear mode, a single press returns to the last active normal mode (Front or All-Axle).
+
+**Startup:** The controller always starts in Front steering mode.
+
+UI override takes priority. Click "Auto" in the web UI to let the momentary button control modes again.
 
 ### All Modes
 
@@ -217,6 +222,22 @@ Front and rear turn in opposite directions. Creates a very tight turning circle.
 ```
 
 All axles point the same direction. Vehicle moves sideways like a crab. Great for parallel parking.
+
+## Horn
+
+Press and hold the **Channel 3 (AUX1)** button to sound the horn. The horn plays continuously while the button is held.
+
+### Horn Types
+
+Three horn sounds are available, selectable in the web UI Sound Settings:
+
+| Horn Type | Description |
+| --------- | ----------- |
+| Truck Horn | Classic truck air horn |
+| MAN TGE Horn | MAN TGE truck horn |
+| La Cucaracha | Musical horn melody |
+
+The horn volume can be adjusted in the web UI Sound Settings page.
 
 ## Porting to Other ESP32 Variants
 

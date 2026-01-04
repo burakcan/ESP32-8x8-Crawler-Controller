@@ -30,6 +30,16 @@ typedef enum {
 } engine_state_t;
 
 /**
+ * @brief Horn type selection
+ */
+typedef enum {
+    HORN_TYPE_TRUCK = 0,    // Classic truck air horn
+    HORN_TYPE_MANTGE,       // MAN TGE truck horn
+    HORN_TYPE_CUCARACHA,    // La Cucaracha musical horn
+    HORN_TYPE_COUNT
+} horn_type_t;
+
+/**
  * @brief Engine sound configuration
  */
 typedef struct {
@@ -68,11 +78,17 @@ typedef struct {
     bool gear_shift_enabled;            // Enable gear shift clunk sound
     uint8_t gear_shift_volume;          // Gear shift volume (0-100)
 
-    bool turbo_enabled;                 // Enable turbo whistle sound
-    uint8_t turbo_volume;               // Turbo volume (0-100)
-
     bool wastegate_enabled;             // Enable wastegate sound
     uint8_t wastegate_volume;           // Wastegate volume (0-100)
+
+    // Horn settings
+    bool horn_enabled;                  // Enable horn sound
+    horn_type_t horn_type;              // Horn sound selection
+    uint8_t horn_volume;                // Horn volume (0-100)
+
+    // Mode switch sound settings
+    bool mode_switch_sound_enabled;     // Enable mode switch sound
+    uint8_t mode_switch_volume;         // Mode switch sound volume (0-100)
 } engine_sound_config_t;
 
 /**
@@ -176,5 +192,27 @@ uint8_t engine_sound_get_gear(void);
  * @brief Get current engine load (0-180)
  */
 int16_t engine_sound_get_load(void);
+
+/**
+ * @brief Play mode switch sound (air shift sound)
+ *
+ * Plays a pneumatic air shift sound for steering mode change feedback.
+ * Only plays if engine is running - otherwise caller should use sound_play().
+ */
+void engine_sound_play_mode_switch(void);
+
+/**
+ * @brief Set horn state (on/off)
+ *
+ * Horn plays continuously while active, using the selected horn type.
+ *
+ * @param active true to start horn, false to stop
+ */
+void engine_sound_set_horn(bool active);
+
+/**
+ * @brief Check if horn is currently playing
+ */
+bool engine_sound_is_horn_active(void);
 
 #endif // ENGINE_SOUND_H

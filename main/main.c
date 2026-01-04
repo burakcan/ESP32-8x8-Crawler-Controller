@@ -27,6 +27,7 @@
 #include "udp_log.h"
 #include "sound.h"
 #include "engine_sound.h"
+#include "mode_switch.h"
 
 static const char *TAG = "MAIN";
 
@@ -59,10 +60,10 @@ static void print_banner(void)
     ESP_LOGI(TAG, "╠══════════════════════════════════════════╣");
     ESP_LOGI(TAG, "║  RC Input:   GPIO %2d (throttle)          ║", PIN_RC_THROTTLE);
     ESP_LOGI(TAG, "║             GPIO %2d (steering)          ║", PIN_RC_STEERING);
-    ESP_LOGI(TAG, "║             GPIO %2d (aux1)              ║", PIN_RC_AUX1);
-    ESP_LOGI(TAG, "║             GPIO %2d (aux2)              ║", PIN_RC_AUX2);
+    ESP_LOGI(TAG, "║             GPIO %2d (horn)              ║", PIN_RC_AUX1);
+    ESP_LOGI(TAG, "║             GPIO %2d (mode switch)       ║", PIN_RC_AUX2);
     ESP_LOGI(TAG, "║  ESC:        GPIO %2d                     ║", PIN_ESC);
-    ESP_LOGI(TAG, "║  Servos:     A1:%2d A2:%2d A3:%2d A4:%2d    ║", 
+    ESP_LOGI(TAG, "║  Servos:     A1:%2d A2:%2d A3:%2d A4:%2d    ║",
              PIN_SERVO_AXLE_1, PIN_SERVO_AXLE_2, PIN_SERVO_AXLE_3, PIN_SERVO_AXLE_4);
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
@@ -79,12 +80,17 @@ static void process_control_loop(void)
     rc_channel_data_t throttle_data, steering_data, aux1_data, aux2_data, aux3_data, aux4_data;
     rc_input_get_calibrated(RC_CH_THROTTLE, &cal->channels[RC_CH_THROTTLE], &throttle_data);
     rc_input_get_calibrated(RC_CH_STEERING, &cal->channels[RC_CH_STEERING], &steering_data);
-    rc_input_get_calibrated(RC_CH_AUX1, &cal->channels[RC_CH_AUX1], &aux1_data);
-    rc_input_get_calibrated(RC_CH_AUX2, &cal->channels[RC_CH_AUX2], &aux2_data);
+    rc_input_get_calibrated(RC_CH_AUX1, &cal->channels[RC_CH_AUX1], &aux1_data);  // Horn button
+    rc_input_get_calibrated(RC_CH_AUX2, &cal->channels[RC_CH_AUX2], &aux2_data);  // Mode switch button
     rc_input_get_calibrated(RC_CH_AUX3, &cal->channels[RC_CH_AUX3], &aux3_data);
     rc_input_get_calibrated(RC_CH_AUX4, &cal->channels[RC_CH_AUX4], &aux4_data);
 
     bool signal_lost = throttle_data.signal_lost || steering_data.signal_lost;
+
+    // AUX1 (Channel 3) - Horn control
+    // Horn sounds while button is held
+    bool horn_pressed = (aux1_data.value > 400);
+    engine_sound_set_horn(horn_pressed);
 
     // AUX3 momentary button handling:
     // - Short press (<5s): Toggle engine ignition
@@ -200,38 +206,30 @@ static void process_control_loop(void)
     // Apply speed-dependent steering reduction
     steer = tuning_apply_speed_steering(steer);
 
-    // Determine steering mode
-    // Priority: UI override > RC AUX switches
+    // Update mode switch with button state (AUX2 = Channel 3 momentary button)
+    // Priority: UI override > mode switch button
     steering_mode_t new_mode;
     uint8_t ui_mode;
 
     if (web_server_get_mode_override(&ui_mode)) {
-        // UI has selected a mode
+        // UI has selected a mode - update mode_switch to stay in sync
+        mode_switch_set_mode((steering_mode_t)ui_mode);
         new_mode = (steering_mode_t)ui_mode;
     } else {
-        // RC: Use AUX switch values
-        // AUX1 OFF + AUX2 OFF = Front (normal)
-        // AUX1 ON  + AUX2 OFF = All Axle (tight turns)
-        // AUX1 OFF + AUX2 ON  = Crab (sideways)
-        // AUX1 ON  + AUX2 ON  = Rear (rear axles steer)
-        bool aux1_on = aux1_data.value > 400;
-        bool aux2_on = aux2_data.value > 400;
-
-        if (!aux1_on && !aux2_on) {
-            new_mode = STEER_MODE_FRONT;
-        } else if (aux1_on && !aux2_on) {
-            new_mode = STEER_MODE_ALL_AXLE;
-        } else if (!aux1_on && aux2_on) {
-            new_mode = STEER_MODE_CRAB;
-        } else {
-            new_mode = STEER_MODE_REAR;
-        }
+        // RC: Use momentary button on Channel 3 (AUX2)
+        // Single press: Toggle between Front and All-Axle
+        // Double press: Crab mode
+        // Triple press: Rear mode
+        // In Crab/Rear: Single press returns to last normal mode
+        bool mode_btn_pressed = (aux2_data.value > 400);
+        mode_switch_update(mode_btn_pressed);
+        new_mode = mode_switch_get_mode();
     }
 
     // Log mode changes
     if (new_mode != current_steering_mode) {
         const char *mode_names[] = {"Front", "Rear", "All-Axle", "Crab"};
-        ESP_LOGI(TAG, "Steering mode: %s (steer=%d)", mode_names[new_mode], steer);
+        ESP_LOGI(TAG, "Steering mode: %s", mode_names[new_mode]);
         current_steering_mode = new_mode;
     }
 
@@ -389,6 +387,10 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing tuning...");
     ESP_ERROR_CHECK(tuning_init(NULL));
 
+    // Initialize mode switch (starts in Front steering mode)
+    ESP_LOGI(TAG, "Initializing mode switch...");
+    mode_switch_init();
+
     // Initialize web server (WiFi OFF by default - hold AUX3 5sec to enable)
     ESP_LOGI(TAG, "Initializing web server (WiFi OFF)...");
     ESP_ERROR_CHECK(web_server_init_no_wifi());
@@ -401,6 +403,12 @@ void app_main(void)
 
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║  Mode Switch (CH3 momentary button):     ║");
+    ESP_LOGI(TAG, "║    1x press = Toggle Front/All-Axle      ║");
+    ESP_LOGI(TAG, "║    2x press = Crab mode                  ║");
+    ESP_LOGI(TAG, "║    3x press = Rear mode                  ║");
+    ESP_LOGI(TAG, "║  (In Crab/Rear: 1x returns to last mode) ║");
+    ESP_LOGI(TAG, "╠══════════════════════════════════════════╣");
     ESP_LOGI(TAG, "║  AUX3 Button Controls:                   ║");
     ESP_LOGI(TAG, "║    Short press = Engine ignition         ║");
     ESP_LOGI(TAG, "║    Hold 5 sec  = WiFi toggle             ║");

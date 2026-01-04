@@ -22,6 +22,7 @@ typedef enum {
     SOUND_WIFI_OFF,         // WiFi disabled
     SOUND_CALIBRATION,      // Calibration mode
     SOUND_ERROR,            // Error beep
+    SOUND_MODE_CHANGE,      // Steering mode changed
     SOUND_COUNT
 } sound_effect_t;
 

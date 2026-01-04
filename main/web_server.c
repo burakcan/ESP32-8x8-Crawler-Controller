@@ -842,10 +842,13 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         "\"reverseBeepVolume\":%d,"
         "\"gearShiftEnabled\":%s,"
         "\"gearShiftVolume\":%d,"
-        "\"turboEnabled\":%s,"
-        "\"turboVolume\":%d,"
         "\"wastegateEnabled\":%s,"
-        "\"wastegateVolume\":%d"
+        "\"wastegateVolume\":%d,"
+        "\"hornEnabled\":%s,"
+        "\"hornVolume\":%d,"
+        "\"hornType\":%d,"
+        "\"modeSwitchEnabled\":%s,"
+        "\"modeSwitchVolume\":%d"
         "}",
         profile,
         profile_name,
@@ -871,10 +874,13 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         cfg->reverse_beep_volume,
         cfg->gear_shift_enabled ? "true" : "false",
         cfg->gear_shift_volume,
-        cfg->turbo_enabled ? "true" : "false",
-        cfg->turbo_volume,
         cfg->wastegate_enabled ? "true" : "false",
-        cfg->wastegate_volume
+        cfg->wastegate_volume,
+        cfg->horn_enabled ? "true" : "false",
+        cfg->horn_volume,
+        cfg->horn_type,
+        cfg->mode_switch_sound_enabled ? "true" : "false",
+        cfg->mode_switch_volume
     );
 
     httpd_resp_set_type(req, "application/json");
@@ -935,10 +941,15 @@ static esp_err_t sound_post_handler(httpd_req_t *req)
     if (parse_json_int(buf, "reverseBeepVolume", &val)) cfg.reverse_beep_volume = val;
     if (parse_json_bool(buf, "gearShiftEnabled", &bval)) cfg.gear_shift_enabled = bval;
     if (parse_json_int(buf, "gearShiftVolume", &val)) cfg.gear_shift_volume = val;
-    if (parse_json_bool(buf, "turboEnabled", &bval)) cfg.turbo_enabled = bval;
-    if (parse_json_int(buf, "turboVolume", &val)) cfg.turbo_volume = val;
     if (parse_json_bool(buf, "wastegateEnabled", &bval)) cfg.wastegate_enabled = bval;
     if (parse_json_int(buf, "wastegateVolume", &val)) cfg.wastegate_volume = val;
+
+    // Parse horn and mode switch settings
+    if (parse_json_bool(buf, "hornEnabled", &bval)) cfg.horn_enabled = bval;
+    if (parse_json_int(buf, "hornVolume", &val)) cfg.horn_volume = val;
+    if (parse_json_int(buf, "hornType", &val)) cfg.horn_type = (horn_type_t)val;
+    if (parse_json_bool(buf, "modeSwitchEnabled", &bval)) cfg.mode_switch_sound_enabled = bval;
+    if (parse_json_int(buf, "modeSwitchVolume", &val)) cfg.mode_switch_volume = val;
 
     // Apply configuration
     engine_sound_set_config(&cfg);

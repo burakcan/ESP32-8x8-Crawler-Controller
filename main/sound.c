@@ -125,38 +125,6 @@ static inline float fast_sin(float x) {
 }
 
 /**
- * @brief Calculate ADSR envelope value
- */
-static float calc_envelope(voice_t *voice, uint32_t sample_idx) {
-    float time = (float)sample_idx / SAMPLE_RATE;
-    adsr_t *env = &voice->envelope;
-
-    if (voice->releasing) {
-        // Release phase
-        float release_time = (float)(sample_idx - voice->release_start) / SAMPLE_RATE;
-        if (release_time >= env->release) {
-            return 0.0f;
-        }
-        return voice->env_level * (1.0f - release_time / env->release);
-    }
-
-    if (time < env->attack) {
-        // Attack phase
-        return time / env->attack;
-    }
-
-    time -= env->attack;
-    if (time < env->decay) {
-        // Decay phase
-        float decay_progress = time / env->decay;
-        return 1.0f - decay_progress * (1.0f - env->sustain);
-    }
-
-    // Sustain phase
-    return env->sustain;
-}
-
-/**
  * @brief Initialize a voice for bell synthesis
  */
 static void init_bell_voice(int voice_idx, float frequency, float amplitude,
@@ -557,6 +525,12 @@ esp_err_t sound_play(sound_effect_t effect) {
             init_bell_voice(v1, 220.0f, 0.6f, 0.01f, 0.4f, 0.2f, 0.3f, 500);
             init_bell_voice(v2, 233.08f, 0.5f, 0.01f, 0.4f, 0.2f, 0.3f, 500);  // Slightly detuned
             play_voices();
+            break;
+        }
+
+        case SOUND_MODE_CHANGE: {
+            // Quick blip - single short tone
+            generate_simple_tone(1047, 50, 60);   // C6 - short confirmation beep
             break;
         }
 
