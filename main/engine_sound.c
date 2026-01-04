@@ -28,6 +28,7 @@
 #include "driver/i2s_std.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 
 // Sound profiles system
 #include "sounds/sound_profiles.h"
@@ -42,8 +43,8 @@
 #include "sounds/effects/la_cucaracha.h"
 #include "sounds/mode_switch_sound.h"
 // MAN TGX-specific effects
-#include "sounds/mantgx/mantgx_shifting.h"
-#include "sounds/mantgx/mantgx_wastegate.h"
+#include "sounds/mantgx/MANTGXshifting.h"
+#include "sounds/mantgx/MANTGXwastegate2.h"
 
 static const char *TAG = "ENGINE_SND";
 
@@ -61,6 +62,8 @@ static const sound_profile_def_t *current_profile = NULL;
 
 // Default configuration for CAT 3408
 static engine_sound_config_t config = {
+    .magic = SOUND_CONFIG_MAGIC,
+    .version = SOUND_CONFIG_VERSION,
     .profile = SOUND_PROFILE_CAT_3408,
     .master_volume = 100,
     .idle_volume = 100,
@@ -634,6 +637,9 @@ static void mix_shutdown_samples(int16_t *buffer, size_t num_samples) {
 
 /**
  * @brief Play engine start sound
+ *
+ * Note: Uses simple integer index instead of fixed-point to avoid overflow
+ * with long start sounds (the start sound plays at normal speed anyway).
  */
 static esp_err_t play_start_sound(void) {
     ESP_LOGI(TAG, "Playing engine start sound (%lu samples)", current_profile->start.sample_count);
@@ -644,23 +650,26 @@ static esp_err_t play_start_sound(void) {
         return ESP_ERR_NO_MEM;
     }
 
-    start_sample_pos = 0;
+    uint32_t sample_idx = 0;  // Simple integer index (no fixed-point needed)
     size_t bytes_written;
     int32_t vol = (config.start_volume * config.master_volume) / 100;
+    uint32_t sample_count = current_profile->start.sample_count;
 
-    while ((start_sample_pos >> 16) < current_profile->start.sample_count) {
+    while (sample_idx < sample_count) {
         for (size_t i = 0; i < ENGINE_BUFFER_SIZE; i++) {
-            int16_t sample = get_start_sample(start_sample_pos);
-            if (sample == -1) {
-                // End of start sound
+            int16_t sample;
+            if (sample_idx < sample_count) {
+                // 8-bit to 16-bit conversion
+                sample = ((int16_t)current_profile->start.samples[sample_idx]) << 8;
+                sample_idx++;
+            } else {
+                // Past end - output silence
                 sample = 0;
             }
 
             int32_t scaled = ((int32_t)sample * vol) >> 8;
             buffer[i * 2] = (int16_t)scaled;
             buffer[i * 2 + 1] = (int16_t)scaled;
-
-            start_sample_pos += 0x10000;  // Normal speed
         }
 
         esp_err_t ret = i2s_channel_write(tx_handle, buffer,
@@ -670,6 +679,9 @@ static esp_err_t play_start_sound(void) {
             // Timeout during start sound is less critical, just continue
             vTaskDelay(pdMS_TO_TICKS(5));
         }
+
+        // Feed watchdog - start sound can be several seconds long
+        esp_task_wdt_reset();
 
         // Check for abort
         if (engine_state != ENGINE_STARTING) {
@@ -796,6 +808,106 @@ static void engine_sound_task(void *arg) {
 }
 
 // ============================================================================
+// Config Defaults and Migration
+// ============================================================================
+
+/**
+ * @brief Set default sound config values
+ */
+static void sound_config_get_defaults(engine_sound_config_t *cfg)
+{
+    if (!cfg) return;
+
+    cfg->magic = SOUND_CONFIG_MAGIC;
+    cfg->version = SOUND_CONFIG_VERSION;
+    cfg->profile = SOUND_PROFILE_CAT_3408;
+    cfg->master_volume = 100;
+    cfg->idle_volume = 100;
+    cfg->rev_volume = 80;
+    cfg->knock_volume = 80;
+    cfg->start_volume = 90;
+    cfg->max_rpm_percentage = 300;
+    cfg->acceleration = 2;
+    cfg->deceleration = 1;
+    cfg->rev_switch_point = 120;
+    cfg->idle_end_point = 450;
+    cfg->knock_start_point = 150;
+    cfg->knock_interval = 8;
+    cfg->jake_brake_enabled = true;
+    cfg->v8_mode = true;
+    cfg->air_brake_enabled = true;
+    cfg->air_brake_volume = 70;
+    cfg->reverse_beep_enabled = true;
+    cfg->reverse_beep_volume = 70;
+    cfg->gear_shift_enabled = true;
+    cfg->gear_shift_volume = 70;
+    cfg->wastegate_enabled = true;
+    cfg->wastegate_volume = 70;
+    cfg->horn_enabled = true;
+    cfg->horn_type = HORN_TYPE_TRUCK;
+    cfg->horn_volume = 80;
+    cfg->mode_switch_sound_enabled = true;
+    cfg->mode_switch_volume = 80;
+}
+
+/**
+ * @brief Migrate sound config from old version to new version
+ * Preserves all compatible settings, only new fields get defaults
+ */
+static void sound_config_migrate(engine_sound_config_t *old_config, uint32_t old_version)
+{
+    ESP_LOGI(TAG, "Migrating sound config from v%lu to v%d", (unsigned long)old_version, SOUND_CONFIG_VERSION);
+
+    // Get fresh defaults for new version
+    engine_sound_config_t new_config;
+    sound_config_get_defaults(&new_config);
+
+    // Copy all fields that exist in all versions (v1 baseline)
+    // Since this is the first version with migration, all existing fields are copied
+    new_config.profile = old_config->profile;
+    new_config.master_volume = old_config->master_volume;
+    new_config.idle_volume = old_config->idle_volume;
+    new_config.rev_volume = old_config->rev_volume;
+    new_config.knock_volume = old_config->knock_volume;
+    new_config.start_volume = old_config->start_volume;
+    new_config.max_rpm_percentage = old_config->max_rpm_percentage;
+    new_config.acceleration = old_config->acceleration;
+    new_config.deceleration = old_config->deceleration;
+    new_config.rev_switch_point = old_config->rev_switch_point;
+    new_config.idle_end_point = old_config->idle_end_point;
+    new_config.knock_start_point = old_config->knock_start_point;
+    new_config.knock_interval = old_config->knock_interval;
+    new_config.jake_brake_enabled = old_config->jake_brake_enabled;
+    new_config.v8_mode = old_config->v8_mode;
+    new_config.air_brake_enabled = old_config->air_brake_enabled;
+    new_config.air_brake_volume = old_config->air_brake_volume;
+    new_config.reverse_beep_enabled = old_config->reverse_beep_enabled;
+    new_config.reverse_beep_volume = old_config->reverse_beep_volume;
+    new_config.gear_shift_enabled = old_config->gear_shift_enabled;
+    new_config.gear_shift_volume = old_config->gear_shift_volume;
+    new_config.wastegate_enabled = old_config->wastegate_enabled;
+    new_config.wastegate_volume = old_config->wastegate_volume;
+    new_config.horn_enabled = old_config->horn_enabled;
+    new_config.horn_type = old_config->horn_type;
+    new_config.horn_volume = old_config->horn_volume;
+    new_config.mode_switch_sound_enabled = old_config->mode_switch_sound_enabled;
+    new_config.mode_switch_volume = old_config->mode_switch_volume;
+
+    // Version-specific migrations would go here
+    // if (old_version >= 2) {
+    //     new_config.some_new_field = old_config->some_new_field;
+    // }
+    // New fields in future versions will get defaults automatically
+
+    // Copy migrated config back
+    memcpy(old_config, &new_config, sizeof(engine_sound_config_t));
+    old_config->magic = SOUND_CONFIG_MAGIC;
+    old_config->version = SOUND_CONFIG_VERSION;
+
+    ESP_LOGI(TAG, "Sound config migration complete");
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
@@ -812,15 +924,25 @@ esp_err_t engine_sound_init(void) {
         return ESP_ERR_NO_MEM;
     }
 
-    // Try to load saved config from NVS
+    // Try to load saved config from NVS with migration support
     engine_sound_config_t saved_config;
     size_t config_len = sizeof(engine_sound_config_t);
-    if (nvs_load_sound_config(&saved_config, &config_len) == ESP_OK &&
-        config_len == sizeof(engine_sound_config_t)) {
-        ESP_LOGI(TAG, "Loaded sound config from NVS");
+    esp_err_t load_ret = nvs_load_sound_config(&saved_config, &config_len);
+
+    if (load_ret != ESP_OK || saved_config.magic != SOUND_CONFIG_MAGIC) {
+        // No valid config at all - use defaults
+        ESP_LOGW(TAG, "No valid sound config found, using defaults");
+        sound_config_get_defaults(&config);
+        nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    } else if (saved_config.version != SOUND_CONFIG_VERSION) {
+        // Valid config but old version - migrate it
+        sound_config_migrate(&saved_config, saved_config.version);
         memcpy(&config, &saved_config, sizeof(engine_sound_config_t));
+        nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
     } else {
-        ESP_LOGI(TAG, "Using default sound config");
+        // Valid config with current version
+        ESP_LOGI(TAG, "Loaded sound config from NVS (version %lu)", (unsigned long)saved_config.version);
+        memcpy(&config, &saved_config, sizeof(engine_sound_config_t));
     }
 
     // Load profile
@@ -1186,28 +1308,37 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
     // SOUND EFFECTS TRIGGER DETECTION
     // =========================================================================
 
-    // Air brake: trigger when coming to a stop from moving
-    // Triggers when speed drops from >100 to <30
+    // Air brake: trigger when motor effectively stops from moving
+    // Use motor cutoff threshold (ESC deadband) for accurate timing
     static int16_t peak_vehicle_speed = 0;  // Track highest speed reached
+    static bool was_motor_stopped = true;   // Track motor state transitions
 
-    // Track peak speed while moving
-    if (vehicle_speed > peak_vehicle_speed) {
+    // Get motor cutoff in vehicle_speed scale (0-500 instead of 0-1000)
+    int16_t motor_cutoff_scaled = tuning_get_motor_cutoff() / 2;
+    bool motor_stopped = tuning_is_motor_stopped();
+
+    // Track peak speed while motor is running (not stopped)
+    if (!motor_stopped && vehicle_speed > peak_vehicle_speed) {
         peak_vehicle_speed = vehicle_speed;
     }
 
-    // Trigger when stopping after moving at decent speed
-    if (peak_vehicle_speed > 100 && vehicle_speed < 30 && !air_brake_trigger) {
+    // Trigger air brake when motor crosses into "stopped" state from moving
+    // This uses the ESC cutoff threshold for accurate timing
+    bool motor_just_stopped = motor_stopped && !was_motor_stopped;
+    if (motor_just_stopped && peak_vehicle_speed > 100 && !air_brake_trigger) {
         air_brake_trigger = true;
         air_brake_sample_pos = 0;
-        ESP_LOGI(TAG, "Air brake triggered (peak: %d, now: %d)", peak_vehicle_speed, vehicle_speed);
+        ESP_LOGI(TAG, "Air brake triggered (motor stopped, peak: %d, cutoff: %d)",
+                 peak_vehicle_speed, motor_cutoff_scaled);
         peak_vehicle_speed = 0;  // Reset after triggering
     }
+    was_motor_stopped = motor_stopped;
 
-    // Reset peak tracking when moving again
-    if (vehicle_speed > 50) {
-        // Don't reset peak while moving - let it accumulate
-    } else if (vehicle_speed < 10 && !air_brake_trigger) {
-        // Only reset peak after fully stopped and air brake done
+    // Reset peak tracking when accelerating again
+    if (!motor_stopped && effective_throttle > 50) {
+        peak_vehicle_speed = vehicle_speed;  // Reset to current, not zero
+    } else if (vehicle_speed < motor_cutoff_scaled && !air_brake_trigger) {
+        // Reset after fully stopped
         peak_vehicle_speed = 0;
     }
 

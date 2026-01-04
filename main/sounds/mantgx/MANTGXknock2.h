@@ -1,6 +1,6 @@
-const unsigned int knockSampleRate = 22050;
-const unsigned int knockSampleCount = 155;
-const signed char knockSamples[] = {//0
+const unsigned int mantgx_knockSampleRate = 22050;
+const unsigned int mantgx_knockSampleCount = 155;
+const signed char mantgx_knockSamples[] = {//0
 0, -2, -2, -2, -2, 0, 7, 10, 14, 19, 22, 22, 21, 20, 18, 14, //16
 11, 9, 11, 13, 15, 15, 13, 14, 18, 25, 29, 30, 29, 28, 29, 32, //32
 34, 33, 29, 28, 30, 34, 40, 43, 43, 42, 41, 39, 36, 35, 32, 31, //48

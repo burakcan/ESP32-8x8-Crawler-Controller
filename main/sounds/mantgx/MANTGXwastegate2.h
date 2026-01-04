@@ -1,6 +1,11 @@
-const unsigned int wastegateSampleRate = 22050;
-const unsigned int wastegateSampleCount = 13896;
-const signed char wastegateSamples[] = {//0
+/**
+ * MAN TGX Wastegate Sound
+ * Variable names prefixed with mantgx_ to avoid conflicts
+ */
+
+const unsigned int mantgx_wastegateSampleRate = 22050;
+const unsigned int mantgx_wastegateSampleCount = 13896;
+const signed char mantgx_wastegateSamples[] = {//0
 0, -2, -4, -4, -6, -12, -28, -37, -36, -21, 10, 39, 47, 30, 7, -6, //16
 -8, 10, 20, 16, 4, -6, -3, 27, 53, 66, 60, 37, 9, -17, -18, -9, //32
 2, 6, -9, -23, -32, -33, -25, -18, -19, -20, -21, -22, -10, 12, 39, 42, //48
