@@ -62,7 +62,9 @@ static engine_sound_config_t config = {
     .magic = SOUND_CONFIG_MAGIC,
     .version = SOUND_CONFIG_VERSION,
     .profile = SOUND_PROFILE_CAT_3408,
-    .master_volume = 100,
+    .master_volume_level1 = 100,    // Normal volume
+    .master_volume_level2 = 50,     // Quiet mode (half volume)
+    .active_volume_level = 0,       // Start on level 1
     .idle_volume = 100,
     .rev_volume = 80,         // Rev slightly quieter since it's layered on top
     .knock_volume = 80,       // Reduced - knock is subtle diesel "tick"
@@ -176,6 +178,18 @@ static uint32_t horn_sample_pos = 0;
 
 // I2S handle (shared with sound.c - we'll get it from there)
 extern i2s_chan_handle_t tx_handle;
+
+/**
+ * @brief Get the currently active master volume
+ *
+ * Returns volume from level 1 or level 2 based on active_volume_level setting.
+ * This is used for all volume calculations in the engine sound system.
+ */
+static inline uint8_t get_master_volume(void)
+{
+    return config.active_volume_level == 0 ?
+           config.master_volume_level1 : config.master_volume_level2;
+}
 
 /**
  * @brief Get sample from idle sound with interpolation
@@ -369,11 +383,11 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
 
     // Apply throttle-dependent volume (key to natural sound!)
     // This makes the engine louder when accelerating, quieter when coasting
-    int32_t idle_vol = (config.idle_volume * config.master_volume * throttle_dependent_volume) / 10000;
-    int32_t rev_vol = (config.rev_volume * config.master_volume * throttle_dependent_rev_volume) / 10000;
-    int32_t knock_vol = (config.knock_volume * config.master_volume * throttle_dependent_volume) / 10000;
+    int32_t idle_vol = (config.idle_volume * get_master_volume() * throttle_dependent_volume) / 10000;
+    int32_t rev_vol = (config.rev_volume * get_master_volume() * throttle_dependent_rev_volume) / 10000;
+    int32_t knock_vol = (config.knock_volume * get_master_volume() * throttle_dependent_volume) / 10000;
     int32_t jake_vol = jake_brake_active ?
-                       (180 * config.master_volume) / 100 : 0;  // Jake brake volume
+                       (180 * get_master_volume()) / 100 : 0;  // Jake brake volume
 
     // Apply crossfade proportions
     idle_vol = (idle_vol * idle_prop) / 100;
@@ -452,7 +466,7 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = air_brake_sample_pos >> 16;
             if (idx < effect_airBrakeSampleCount) {
                 int16_t sample = ((int16_t)effect_airBrakeSamples[idx]) << 8;
-                int32_t vol = (config.air_brake_volume * config.master_volume) / 100;
+                int32_t vol = (config.air_brake_volume * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
                 air_brake_sample_pos += 0x10000;  // Normal rate
             } else {
@@ -466,7 +480,7 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = reverse_beep_sample_pos >> 16;
             if (idx < effect_reverseBeepSampleCount) {
                 int16_t sample = ((int16_t)effect_reverseBeepSamples[idx]) << 8;
-                int32_t vol = (config.reverse_beep_volume * config.master_volume) / 100;
+                int32_t vol = (config.reverse_beep_volume * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
                 reverse_beep_sample_pos += 0x10000;  // Normal rate
             } else {
@@ -492,7 +506,7 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = gear_shift_sound_sample_pos >> 16;
             if (idx < shift_count) {
                 int16_t sample = ((int16_t)shift_samples[idx]) << 8;
-                int32_t vol = (config.gear_shift_volume * config.master_volume) / 100;
+                int32_t vol = (config.gear_shift_volume * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
                 gear_shift_sound_sample_pos += 0x10000;  // Normal rate
             } else {
@@ -521,7 +535,7 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
                 int16_t sample = ((int16_t)wg_samples[idx]) << 8;
                 // RPM-dependent wastegate volume (louder at higher RPM)
                 int32_t rpm_vol = 50 + (current_rpm * 50 / MAX_RPM);  // 50-100%
-                int32_t vol = (config.wastegate_volume * rpm_vol * config.master_volume) / 10000;
+                int32_t vol = (config.wastegate_volume * rpm_vol * get_master_volume()) / 10000;
                 mix += ((int32_t)sample * vol) >> 8;
                 wastegate_sample_pos += 0x10000;  // Normal rate
             } else {
@@ -535,7 +549,7 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = mode_switch_sample_pos >> 16;
             if (idx < modeSwitchSampleCount) {
                 int16_t sample = ((int16_t)modeSwitchSamples[idx]) << 8;
-                int32_t vol = (config.mode_switch_volume * config.master_volume) / 100;
+                int32_t vol = (config.mode_switch_volume * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
                 mode_switch_sample_pos += 0x10000;  // Normal rate
             } else {
@@ -574,7 +588,7 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = horn_sample_pos >> 16;
             if (idx < horn_count) {
                 int16_t sample = ((int16_t)horn_samples[idx]) << 8;
-                int32_t vol = (config.horn_volume * config.master_volume) / 100;
+                int32_t vol = (config.horn_volume * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
                 horn_sample_pos += 0x10000;  // Normal rate
 
@@ -609,7 +623,7 @@ static void mix_shutdown_samples(int16_t *buffer, size_t num_samples) {
     uint32_t increment = (base_increment * 100) / shutdown_speed_pct;
 
     // Base volume with shutdown attenuation
-    int32_t idle_vol = (config.idle_volume * config.master_volume) / 100;
+    int32_t idle_vol = (config.idle_volume * get_master_volume()) / 100;
     idle_vol = idle_vol / shutdown_attenuation;
 
     for (size_t i = 0; i < num_samples; i++) {
@@ -650,7 +664,7 @@ static esp_err_t play_start_sound(void) {
 
     uint32_t sample_idx = 0;  // Simple integer index (no fixed-point needed)
     size_t bytes_written;
-    int32_t vol = (config.start_volume * config.master_volume) / 100;
+    int32_t vol = (config.start_volume * get_master_volume()) / 100;
     uint32_t sample_count = current_profile->start.sample_count;
 
     while (sample_idx < sample_count) {
@@ -819,7 +833,9 @@ static void sound_config_get_defaults(engine_sound_config_t *cfg)
     cfg->magic = SOUND_CONFIG_MAGIC;
     cfg->version = SOUND_CONFIG_VERSION;
     cfg->profile = SOUND_PROFILE_CAT_3408;
-    cfg->master_volume = 100;
+    cfg->master_volume_level1 = 100;    // Normal volume
+    cfg->master_volume_level2 = 50;     // Quiet mode
+    cfg->active_volume_level = 0;       // Start on level 1
     cfg->idle_volume = 100;
     cfg->rev_volume = 80;
     cfg->knock_volume = 80;
@@ -851,6 +867,11 @@ static void sound_config_get_defaults(engine_sound_config_t *cfg)
 /**
  * @brief Migrate sound config from old version to new version
  * Preserves all compatible settings, only new fields get defaults
+ *
+ * Version history:
+ *   v1: Original config with single master_volume field
+ *   v2: Added dual volume levels (master_volume_level1/2, active_volume_level)
+ *       - Struct layout changed: fields after master_volume shifted by 2 bytes
  */
 static void sound_config_migrate(engine_sound_config_t *old_config, uint32_t old_version)
 {
@@ -860,42 +881,31 @@ static void sound_config_migrate(engine_sound_config_t *old_config, uint32_t old
     engine_sound_config_t new_config;
     sound_config_get_defaults(&new_config);
 
-    // Copy all fields that exist in all versions (v1 baseline)
-    // Since this is the first version with migration, all existing fields are copied
+    // Preserve profile selection (same offset in all versions)
     new_config.profile = old_config->profile;
-    new_config.master_volume = old_config->master_volume;
-    new_config.idle_volume = old_config->idle_volume;
-    new_config.rev_volume = old_config->rev_volume;
-    new_config.knock_volume = old_config->knock_volume;
-    new_config.start_volume = old_config->start_volume;
-    new_config.max_rpm_percentage = old_config->max_rpm_percentage;
-    new_config.acceleration = old_config->acceleration;
-    new_config.deceleration = old_config->deceleration;
-    new_config.rev_switch_point = old_config->rev_switch_point;
-    new_config.idle_end_point = old_config->idle_end_point;
-    new_config.knock_start_point = old_config->knock_start_point;
-    new_config.knock_interval = old_config->knock_interval;
-    new_config.jake_brake_enabled = old_config->jake_brake_enabled;
-    new_config.v8_mode = old_config->v8_mode;
-    new_config.air_brake_enabled = old_config->air_brake_enabled;
-    new_config.air_brake_volume = old_config->air_brake_volume;
-    new_config.reverse_beep_enabled = old_config->reverse_beep_enabled;
-    new_config.reverse_beep_volume = old_config->reverse_beep_volume;
-    new_config.gear_shift_enabled = old_config->gear_shift_enabled;
-    new_config.gear_shift_volume = old_config->gear_shift_volume;
-    new_config.wastegate_enabled = old_config->wastegate_enabled;
-    new_config.wastegate_volume = old_config->wastegate_volume;
-    new_config.horn_enabled = old_config->horn_enabled;
-    new_config.horn_type = old_config->horn_type;
-    new_config.horn_volume = old_config->horn_volume;
-    new_config.mode_switch_sound_enabled = old_config->mode_switch_sound_enabled;
-    new_config.mode_switch_volume = old_config->mode_switch_volume;
 
-    // Version-specific migrations would go here
+    if (old_version == 1) {
+        // v1 → v2 migration:
+        // - Old struct had single master_volume at offset of new master_volume_level1
+        // - All fields after that have shifted by 2 bytes, so they can't be trusted
+        // - We preserve the old master_volume as level1, set level2 to half that
+        // - All other settings reset to defaults (struct layout incompatible)
+
+        // The old master_volume is now at the position of master_volume_level1
+        uint8_t old_master_volume = old_config->master_volume_level1;
+        new_config.master_volume_level1 = old_master_volume;
+        new_config.master_volume_level2 = old_master_volume / 2;  // Quiet mode = half
+        new_config.active_volume_level = 0;  // Start on level 1
+
+        ESP_LOGI(TAG, "v1->v2: old master_volume=%d -> level1=%d, level2=%d",
+                 old_master_volume, new_config.master_volume_level1, new_config.master_volume_level2);
+    }
+    // Future migrations would go here:
     // if (old_version >= 2) {
-    //     new_config.some_new_field = old_config->some_new_field;
+    //     // v2 fields are compatible, copy them
+    //     new_config.master_volume_level1 = old_config->master_volume_level1;
+    //     ...
     // }
-    // New fields in future versions will get defaults automatically
 
     // Copy migrated config back
     memcpy(old_config, &new_config, sizeof(engine_sound_config_t));
@@ -1507,4 +1517,29 @@ void engine_sound_set_horn(bool active) {
 
 bool engine_sound_is_horn_active(void) {
     return horn_active;
+}
+
+uint8_t engine_sound_toggle_volume_level(void) {
+    // Toggle between level 0 and 1
+    config.active_volume_level = (config.active_volume_level == 0) ? 1 : 0;
+
+    uint8_t new_volume = get_master_volume();
+    ESP_LOGI(TAG, "Volume level toggled to %d (volume: %d%%)",
+             config.active_volume_level, new_volume);
+
+    // Play a short confirmation beep
+    // Use the mode switch sound if engine is running, otherwise use a simple beep
+    if (engine_state == ENGINE_RUNNING) {
+        mode_switch_trigger = true;
+        mode_switch_sample_pos = 0;
+    }
+
+    // Save the new setting to NVS
+    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+
+    return config.active_volume_level;
+}
+
+uint8_t engine_sound_get_master_volume(void) {
+    return get_master_volume();
 }
