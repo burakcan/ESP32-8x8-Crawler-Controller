@@ -92,54 +92,115 @@ static void process_control_loop(void)
     bool horn_pressed = (aux1_data.value > 400);
     engine_sound_set_horn(horn_pressed);
 
-    // AUX3 momentary button handling:
-    // - Short press (<5s): Toggle engine ignition
+    // AUX3 momentary button handling (ignition/wifi/volume button):
+    // - Single short press: Toggle engine ignition
+    // - Double press: Toggle between volume level 1 and 2
     // - Long press (>=5s): Toggle WiFi
-    static bool aux3_was_pressed = false;
+    //
+    // State machine similar to mode_switch.c but with single/double detection
+    typedef enum {
+        AUX3_IDLE,          // Waiting for press
+        AUX3_PRESSED,       // Button held down
+        AUX3_WAIT_COMMIT    // Released, waiting for double-click or timeout
+    } aux3_state_t;
+
+    static aux3_state_t aux3_state = AUX3_IDLE;
     static int64_t aux3_press_time = 0;
+    static int64_t aux3_release_time = 0;
+    static int aux3_press_count = 0;
     static bool aux3_long_press_handled = false;
 
-    bool aux3_pressed = (aux3_data.value > 400);  // Button is currently pressed (value range -1000 to +1000)
+    #define AUX3_DEBOUNCE_MS        50      // Minimum time between state changes
+    #define AUX3_DOUBLE_CLICK_MS    400     // Max time between presses for double-click
+    #define AUX3_COMMIT_TIMEOUT_MS  350     // Time after release to commit single press
+    #define AUX3_LONG_PRESS_MS      5000    // Long press threshold for WiFi toggle
+
+    bool aux3_pressed = (aux3_data.value > 400);  // Button is currently pressed
     int64_t now_ms = esp_timer_get_time() / 1000;
 
-    if (aux3_pressed && !aux3_was_pressed) {
-        // Button just pressed - record time
-        aux3_press_time = now_ms;
-        aux3_long_press_handled = false;
-    } else if (aux3_pressed && aux3_was_pressed) {
-        // Button being held - check for long press (5 seconds)
-        if (!aux3_long_press_handled && (now_ms - aux3_press_time) >= 5000) {
-            // Long press detected - toggle WiFi
-            // Use actual WiFi state (may have been auto-enabled)
-            aux3_long_press_handled = true;
-            bool wifi_currently_on = web_server_wifi_is_enabled();
-
-            if (!wifi_currently_on) {
-                sound_play(SOUND_WIFI_ON);
-                web_server_wifi_enable();
-                udp_log_init();
-                ota_update_init();
-            } else {
-                sound_play(SOUND_WIFI_OFF);
-                web_server_wifi_disable();
+    switch (aux3_state) {
+        case AUX3_IDLE:
+            if (aux3_pressed) {
+                // Button just pressed
+                aux3_state = AUX3_PRESSED;
+                aux3_press_time = now_ms;
+                aux3_press_count = 1;
+                aux3_long_press_handled = false;
             }
+            break;
 
-            // Set LED notification for 2 seconds
-            wifi_switch_notify_until = (uint32_t)now_ms + 2000;
-            wifi_switch_notify_on = !wifi_currently_on;
-        }
-    } else if (!aux3_pressed && aux3_was_pressed) {
-        // Button just released
-        if (!aux3_long_press_handled) {
-            // Short press - toggle engine ignition
-            if (engine_sound_get_state() == ENGINE_OFF) {
-                engine_sound_start();
-            } else {
-                engine_sound_stop();
+        case AUX3_PRESSED:
+            if (!aux3_pressed && (now_ms - aux3_press_time) >= AUX3_DEBOUNCE_MS) {
+                // Button released (with debounce)
+                aux3_state = AUX3_WAIT_COMMIT;
+                aux3_release_time = now_ms;
+            } else if (aux3_pressed && !aux3_long_press_handled &&
+                       (now_ms - aux3_press_time) >= AUX3_LONG_PRESS_MS) {
+                // Long press detected - toggle WiFi
+                aux3_long_press_handled = true;
+                bool wifi_currently_on = web_server_wifi_is_enabled();
+
+                if (!wifi_currently_on) {
+                    sound_play(SOUND_WIFI_ON);
+                    web_server_wifi_enable();
+                    udp_log_init();
+                    ota_update_init();
+                } else {
+                    sound_play(SOUND_WIFI_OFF);
+                    web_server_wifi_disable();
+                }
+
+                // Set LED notification for 2 seconds
+                wifi_switch_notify_until = (uint32_t)now_ms + 2000;
+                wifi_switch_notify_on = !wifi_currently_on;
             }
-        }
+            break;
+
+        case AUX3_WAIT_COMMIT:
+            if (aux3_pressed) {
+                // Another press - check if within double-click window
+                if ((now_ms - aux3_release_time) <= AUX3_DOUBLE_CLICK_MS) {
+                    aux3_press_count++;
+                    aux3_state = AUX3_PRESSED;
+                    aux3_press_time = now_ms;
+                    aux3_long_press_handled = false;  // Reset for new press
+                } else {
+                    // Too late, commit previous action and start new sequence
+                    if (aux3_press_count == 1 && !aux3_long_press_handled) {
+                        // Single press - toggle engine
+                        if (engine_sound_get_state() == ENGINE_OFF) {
+                            engine_sound_start();
+                        } else {
+                            engine_sound_stop();
+                        }
+                    }
+                    // Start new sequence
+                    aux3_press_count = 1;
+                    aux3_state = AUX3_PRESSED;
+                    aux3_press_time = now_ms;
+                    aux3_long_press_handled = false;
+                }
+            } else if ((now_ms - aux3_release_time) >= AUX3_COMMIT_TIMEOUT_MS) {
+                // Timeout - commit the action based on press count
+                if (!aux3_long_press_handled) {
+                    if (aux3_press_count == 1) {
+                        // Single press - toggle engine ignition
+                        if (engine_sound_get_state() == ENGINE_OFF) {
+                            engine_sound_start();
+                        } else {
+                            engine_sound_stop();
+                        }
+                    } else if (aux3_press_count >= 2) {
+                        // Double press - toggle volume level
+                        uint8_t new_level = engine_sound_toggle_volume_level();
+                        ESP_LOGI(TAG, "Volume level switched to %d", new_level + 1);
+                    }
+                }
+                aux3_press_count = 0;
+                aux3_state = AUX3_IDLE;
+            }
+            break;
     }
-    aux3_was_pressed = aux3_pressed;
 
     // AUX4 controls throttle mode (3-position switch)
     // Values: -836 (low), 0 (center), 836 (high) - range roughly -1000 to +1000
@@ -410,8 +471,9 @@ void app_main(void)
     ESP_LOGI(TAG, "║  (In Crab/Rear: 1x returns to last mode) ║");
     ESP_LOGI(TAG, "╠══════════════════════════════════════════╣");
     ESP_LOGI(TAG, "║  AUX3 Button Controls:                   ║");
-    ESP_LOGI(TAG, "║    Short press = Engine ignition         ║");
-    ESP_LOGI(TAG, "║    Hold 5 sec  = WiFi toggle             ║");
+    ESP_LOGI(TAG, "║    1x press = Engine ignition            ║");
+    ESP_LOGI(TAG, "║    2x press = Toggle volume level        ║");
+    ESP_LOGI(TAG, "║    Hold 5s  = WiFi toggle                ║");
     ESP_LOGI(TAG, "║  WiFi:   %s / %s         ║", WIFI_AP_SSID, WIFI_AP_PASS);
     ESP_LOGI(TAG, "║  (WiFi auto-enables if no RC for 5 sec)  ║");
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");

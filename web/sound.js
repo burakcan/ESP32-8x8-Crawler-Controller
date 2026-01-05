@@ -41,10 +41,16 @@ export class SoundPage {
                 <div class="card">
                     <h2>Volume Settings</h2>
                     <div class="volume-container">
+                        <p class="help-text">Double-click ignition button to toggle between levels</p>
                         <div class="slider-row">
-                            <span class="label">Master Volume</span>
-                            <input type="range" id="master-volume" min="0" max="200" value="100"/>
-                            <span class="value" id="master-volume-val">100%</span>
+                            <span class="label">Volume Level 1 <span id="level1-active" class="active-badge">●</span></span>
+                            <input type="range" id="volume-level1" min="0" max="200" value="100"/>
+                            <span class="value" id="volume-level1-val">100%</span>
+                        </div>
+                        <div class="slider-row">
+                            <span class="label">Volume Level 2 <span id="level2-active" class="active-badge hidden">●</span></span>
+                            <input type="range" id="volume-level2" min="0" max="200" value="50"/>
+                            <span class="value" id="volume-level2-val">50%</span>
                         </div>
                         <div class="slider-row">
                             <span class="label">Idle Volume</span>
@@ -230,8 +236,12 @@ export class SoundPage {
             enabled: document.getElementById('sound-enabled'),
             currentRpm: document.getElementById('current-rpm'),
             // Volumes
-            masterVolume: document.getElementById('master-volume'),
-            masterVolumeVal: document.getElementById('master-volume-val'),
+            volumeLevel1: document.getElementById('volume-level1'),
+            volumeLevel1Val: document.getElementById('volume-level1-val'),
+            volumeLevel2: document.getElementById('volume-level2'),
+            volumeLevel2Val: document.getElementById('volume-level2-val'),
+            level1Active: document.getElementById('level1-active'),
+            level2Active: document.getElementById('level2-active'),
             idleVolume: document.getElementById('idle-volume'),
             idleVolumeVal: document.getElementById('idle-volume-val'),
             revVolume: document.getElementById('rev-volume'),
@@ -287,7 +297,8 @@ export class SoundPage {
         };
 
         // Setup slider value displays
-        this.setupSlider('masterVolume', '%');
+        this.setupSlider('volumeLevel1', '%');
+        this.setupSlider('volumeLevel2', '%');
         this.setupSlider('idleVolume', '%');
         this.setupSlider('revVolume', '%');
         this.setupSlider('knockVolume', '%');
@@ -409,8 +420,18 @@ export class SoundPage {
         el.currentRpm.textContent = cfg.rpm;
 
         // Volumes
-        el.masterVolume.value = cfg.masterVolume;
-        el.masterVolumeVal.textContent = cfg.masterVolume + '%';
+        el.volumeLevel1.value = cfg.masterVolumeLevel1;
+        el.volumeLevel1Val.textContent = cfg.masterVolumeLevel1 + '%';
+        el.volumeLevel2.value = cfg.masterVolumeLevel2;
+        el.volumeLevel2Val.textContent = cfg.masterVolumeLevel2 + '%';
+        // Show active level indicator
+        if (cfg.activeVolumeLevel === 0) {
+            el.level1Active.classList.remove('hidden');
+            el.level2Active.classList.add('hidden');
+        } else {
+            el.level1Active.classList.add('hidden');
+            el.level2Active.classList.remove('hidden');
+        }
         el.idleVolume.value = cfg.idleVolume;
         el.idleVolumeVal.textContent = cfg.idleVolume + '%';
         el.revVolume.value = cfg.revVolume;
@@ -475,7 +496,8 @@ export class SoundPage {
         const config = {
             profile: parseInt(el.profile.value),
             enabled: el.enabled.checked,
-            masterVolume: parseInt(el.masterVolume.value),
+            masterVolumeLevel1: parseInt(el.volumeLevel1.value),
+            masterVolumeLevel2: parseInt(el.volumeLevel2.value),
             idleVolume: parseInt(el.idleVolume.value),
             revVolume: parseInt(el.revVolume.value),
             knockVolume: parseInt(el.knockVolume.value),

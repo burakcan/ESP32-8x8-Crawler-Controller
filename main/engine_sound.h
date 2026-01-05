@@ -41,7 +41,7 @@ typedef enum {
 
 // Sound config magic number and version for NVS migration
 #define SOUND_CONFIG_MAGIC      0x534E4443  // "SNDC" in hex
-#define SOUND_CONFIG_VERSION    1           // Initial version with migration support
+#define SOUND_CONFIG_VERSION    2           // Version 2: Added dual master volume levels
 
 /**
  * @brief Engine sound configuration
@@ -55,7 +55,9 @@ typedef struct {
     sound_profile_t profile;            // Selected sound profile
 
     // Volume settings (0-200%)
-    uint8_t master_volume;              // Overall volume
+    uint8_t master_volume_level1;       // Master volume level 1 (default/normal)
+    uint8_t master_volume_level2;       // Master volume level 2 (alternate, e.g. quiet)
+    uint8_t active_volume_level;        // Which level is active (0 or 1)
     uint8_t idle_volume;                // Idle sound volume
     uint8_t rev_volume;                 // Rev sound volume
     uint8_t knock_volume;               // Diesel knock volume
@@ -222,5 +224,20 @@ void engine_sound_set_horn(bool active);
  * @brief Check if horn is currently playing
  */
 bool engine_sound_is_horn_active(void);
+
+/**
+ * @brief Toggle between master volume level 1 and 2
+ *
+ * Switches the active volume level and plays a confirmation sound.
+ * Used for quick volume switching via double-click on ignition button.
+ *
+ * @return The new active level (0 or 1)
+ */
+uint8_t engine_sound_toggle_volume_level(void);
+
+/**
+ * @brief Get the current active master volume (from level 1 or 2)
+ */
+uint8_t engine_sound_get_master_volume(void);
 
 #endif // ENGINE_SOUND_H

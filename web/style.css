@@ -1821,3 +1821,29 @@ input[type="file"]::file-selector-button {
         flex: 0 0 120px;
     }
 }
+
+/* =============================================================================
+   DUAL VOLUME LEVEL INDICATORS
+   ============================================================================= */
+
+.help-text {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.active-badge {
+    color: var(--accent-green);
+    font-size: 0.9em;
+    margin-left: 4px;
+    text-shadow: 0 0 8px var(--accent-green);
+}
+
+.active-badge.hidden {
+    display: none;
+}
+
+.hidden {
+    display: none;
+}

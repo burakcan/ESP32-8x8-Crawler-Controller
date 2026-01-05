@@ -823,7 +823,9 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         "{"
         "\"profile\":%d,"
         "\"profileName\":\"%s\","
-        "\"masterVolume\":%d,"
+        "\"masterVolumeLevel1\":%d,"
+        "\"masterVolumeLevel2\":%d,"
+        "\"activeVolumeLevel\":%d,"
         "\"idleVolume\":%d,"
         "\"revVolume\":%d,"
         "\"knockVolume\":%d,"
@@ -855,7 +857,9 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         "}",
         profile,
         profile_name,
-        cfg->master_volume,
+        cfg->master_volume_level1,
+        cfg->master_volume_level2,
+        cfg->active_volume_level,
         cfg->idle_volume,
         cfg->rev_volume,
         cfg->knock_volume,
@@ -921,7 +925,9 @@ static esp_err_t sound_post_handler(httpd_req_t *req)
             cfg.profile = (sound_profile_t)val;
         }
     }
-    if (parse_json_int(buf, "masterVolume", &val)) cfg.master_volume = val;
+    if (parse_json_int(buf, "masterVolumeLevel1", &val)) cfg.master_volume_level1 = val;
+    if (parse_json_int(buf, "masterVolumeLevel2", &val)) cfg.master_volume_level2 = val;
+    if (parse_json_int(buf, "activeVolumeLevel", &val)) cfg.active_volume_level = val;
     if (parse_json_int(buf, "idleVolume", &val)) cfg.idle_volume = val;
     if (parse_json_int(buf, "revVolume", &val)) cfg.rev_volume = val;
     if (parse_json_int(buf, "knockVolume", &val)) cfg.knock_volume = val;
