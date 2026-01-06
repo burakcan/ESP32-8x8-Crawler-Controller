@@ -3,6 +3,7 @@
 export class SettingsPage {
     constructor() {
         this.elements = {};
+        this.activeXhr = null;
     }
 
     render() {
@@ -267,6 +268,7 @@ export class SettingsPage {
         this.setOtaStatus('Uploading...', '');
 
         const xhr = new XMLHttpRequest();
+        this.activeXhr = xhr;
         xhr.open('POST', '/api/ota', true);
 
         xhr.upload.onprogress = (e) => {
@@ -278,6 +280,7 @@ export class SettingsPage {
         };
 
         xhr.onload = () => {
+            this.activeXhr = null;
             if (xhr.status === 200) {
                 this.setOtaStatus('Update complete! Restarting...', 'success');
                 setTimeout(() => location.reload(), 5000);
@@ -289,6 +292,7 @@ export class SettingsPage {
         };
 
         xhr.onerror = () => {
+            this.activeXhr = null;
             this.setOtaStatus('Network error', 'error');
             el.otaBtn.disabled = false;
             el.otaProgress.classList.remove('active');
@@ -375,9 +379,11 @@ export class SettingsPage {
             el.spiffsBar.style.width = ((index / total) * 100) + '%';
 
             const xhr = new XMLHttpRequest();
+            this.activeXhr = xhr;
             xhr.open('POST', '/api/spiffs?file=' + encodeURIComponent(file.name), true);
 
             xhr.onload = () => {
+                this.activeXhr = null;
                 if (xhr.status === 200) {
                     uploaded++;
                     uploadNext(index + 1);
@@ -389,6 +395,7 @@ export class SettingsPage {
             };
 
             xhr.onerror = () => {
+                this.activeXhr = null;
                 this.setSpiffsStatus('Network error uploading ' + file.name, 'error');
                 el.spiffsBtn.disabled = false;
                 el.spiffsProgress.classList.remove('active');
@@ -444,5 +451,9 @@ export class SettingsPage {
     }
 
     destroy() {
+        if (this.activeXhr) {
+            this.activeXhr.abort();
+            this.activeXhr = null;
+        }
     }
 }
