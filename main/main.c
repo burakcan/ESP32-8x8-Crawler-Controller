@@ -29,6 +29,7 @@
 #include "engine_sound.h"
 #include "mode_switch.h"
 #include "menu.h"
+#include "metrics.h"
 
 static const char *TAG = "MAIN";
 
@@ -427,6 +428,9 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_task_wdt_reconfigure(&wdt_config));
     ESP_ERROR_CHECK(esp_task_wdt_add(NULL));  // Add current task to watchdog
 
+    // Initialize metrics collection
+    metrics_init();
+
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║            SYSTEM READY                  ║");
@@ -448,6 +452,9 @@ void app_main(void)
     #define AUTO_WIFI_TIMEOUT_MS 5000
 
     while (1) {
+        // Record loop start time for metrics
+        int64_t loop_start_us = esp_timer_get_time();
+
         // Check if calibration is running (can be started via web UI)
         bool calibrating = calibration_in_progress();
 
@@ -539,6 +546,15 @@ void app_main(void)
 
         // Feed watchdog to prevent reset
         esp_task_wdt_reset();
+
+        // Record loop timing metrics
+        int64_t loop_end_us = esp_timer_get_time();
+        metrics_record_loop_time((uint32_t)(loop_end_us - loop_start_us));
+
+        // Log metrics summary every 10 seconds (1000 loops at 10ms period)
+        if (loop_count > 0 && (loop_count % 1000) == 0) {
+            metrics_log_summary();
+        }
 
         // Maintain consistent loop timing (compensates for execution time)
         vTaskDelayUntil(&last_wake_time, loop_period_ticks);
