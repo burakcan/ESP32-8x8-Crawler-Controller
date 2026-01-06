@@ -831,8 +831,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
     sound_profile_t profile = engine_sound_get_profile();
     const char *profile_name = sound_profiles_get_name(profile);
 
-    // Build JSON response for effect settings (~700 bytes actual, 768 with margin)
-    char response[768];
+    // Build JSON response (increased buffer for effect settings)
+    char response[2048];
     snprintf(response, sizeof(response),
         "{"
         "\"profile\":%d,"
