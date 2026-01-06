@@ -617,8 +617,8 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
 {
     const tuning_config_t *cfg = tuning_get_config();
 
-    // Build JSON response - servo settings
-    char response[1024];
+    // Build JSON response - servo settings (~600 bytes actual, 768 with margin)
+    char response[768];
     int len = snprintf(response, sizeof(response),
         "{"
         "\"servos\":["
@@ -708,7 +708,8 @@ static bool parse_json_bool(const char *json, const char *key, bool *value)
  */
 static esp_err_t tuning_post_handler(httpd_req_t *req)
 {
-    char buf[1024];
+    // Reduced buffer - tuning JSON payload ~400 bytes max
+    char buf[512];
     int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (received <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
@@ -820,8 +821,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
     sound_profile_t profile = engine_sound_get_profile();
     const char *profile_name = sound_profiles_get_name(profile);
 
-    // Build JSON response (increased buffer for effect settings)
-    char response[1024];
+    // Build JSON response for effect settings (~700 bytes actual, 768 with margin)
+    char response[768];
     snprintf(response, sizeof(response),
         "{"
         "\"profile\":%d,"
@@ -911,7 +912,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
  */
 static esp_err_t sound_post_handler(httpd_req_t *req)
 {
-    char buf[1024];  // Increased for effect settings
+    // Reduced buffer - sound config JSON payload ~500 bytes max
+    char buf[640];
     int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (received <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
