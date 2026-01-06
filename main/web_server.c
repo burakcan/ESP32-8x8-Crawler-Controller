@@ -614,8 +614,8 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
 {
     const tuning_config_t *cfg = tuning_get_config();
 
-    // Build JSON response - servo settings
-    char response[1024];
+    // Build JSON response - servo settings (actual max ~450 bytes)
+    char response[512];
     int len = snprintf(response, sizeof(response),
         "{"
         "\"servos\":["
@@ -817,8 +817,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
     sound_profile_t profile = engine_sound_get_profile();
     const char *profile_name = sound_profiles_get_name(profile);
 
-    // Build JSON response (increased buffer for effect settings)
-    char response[1024];
+    // Build JSON response (actual max ~650 bytes)
+    char response[768];
     snprintf(response, sizeof(response),
         "{"
         "\"profile\":%d,"
@@ -1437,7 +1437,9 @@ void web_server_update_status(const web_status_t *status)
 
     memcpy(&current_status, status, sizeof(web_status_t));
 
-    if (ws_fd < 0 || server == NULL) return;
+    // Capture ws_fd atomically to avoid TOCTOU race with disconnect handler
+    int fd = ws_fd;
+    if (fd < 0 || server == NULL) return;
 
     // Build JSON status
     // Main: t=throttle, s=steering, x1-x4=aux channels, e=esc, a1-a4=axle servos, m=mode
@@ -1495,7 +1497,7 @@ void web_server_update_status(const web_status_t *status)
         .len = len
     };
 
-    esp_err_t ret = httpd_ws_send_frame_async(server, ws_fd, &ws_pkt);
+    esp_err_t ret = httpd_ws_send_frame_async(server, fd, &ws_pkt);
     if (ret != ESP_OK) {
         // Client disconnected - clear the socket fd so we stop trying
         ws_fd = -1;
