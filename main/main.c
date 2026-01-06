@@ -268,8 +268,9 @@ static void process_control_loop(void)
 
 /**
  * @brief Update web UI and optionally print to serial
+ * @param now_ms Current time in milliseconds (from main loop)
  */
-static void update_status(void)
+static void update_status(uint32_t now_ms)
 {
     // Skip status updates if WiFi is off
     if (!web_server_wifi_is_enabled()) {
@@ -277,13 +278,12 @@ static void update_status(void)
     }
 
     static uint32_t last_update = 0;
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
     // Update web UI at 10Hz
-    if (now - last_update < 100) {
+    if (now_ms - last_update < 100) {
         return;
     }
-    last_update = now;
+    last_update = now_ms;
     
     const calibration_data_t *cal = calibration_get_data();
     
@@ -448,6 +448,9 @@ void app_main(void)
     #define AUTO_WIFI_TIMEOUT_MS 5000
 
     while (1) {
+        // Calculate current time once per loop iteration (avoids repeated division)
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+
         // Check if calibration is running (can be started via web UI)
         bool calibrating = calibration_in_progress();
 
@@ -480,7 +483,6 @@ void app_main(void)
                 ota_update_init();
 
                 // Set LED notification for 2 seconds
-                uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
                 wifi_switch_notify_until = now_ms + 2000;
                 wifi_switch_notify_on = true;
             }
@@ -499,7 +501,6 @@ void app_main(void)
         // Update LED state based on system state (priority order)
         led_state_t new_led_state = LED_STATE_IDLE;
         ota_progress_t ota = ota_get_progress();
-        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
 
         if (ota.status == OTA_STATUS_IN_PROGRESS) {
             new_led_state = LED_STATE_OTA;
@@ -534,7 +535,7 @@ void app_main(void)
             web_server_update_servo_test();
 
             // Update web UI
-            update_status();
+            update_status(now_ms);
         }
 
         // Feed watchdog to prevent reset
