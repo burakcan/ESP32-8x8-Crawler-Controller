@@ -109,7 +109,7 @@ static engine_sound_config_t config = {
 static engine_state_t engine_state = ENGINE_OFF;
 static bool engine_enabled = false;
 static bool engine_task_running = false;
-static TaskHandle_t engine_task_handle = NULL;
+TaskHandle_t engine_task_handle = NULL;
 static SemaphoreHandle_t engine_mutex = NULL;
 
 // RPM tracking
