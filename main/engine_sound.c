@@ -57,6 +57,8 @@ static const sound_profile_def_t *current_profile = NULL;
 #define ENGINE_SAMPLE_RATE      22050
 #define ENGINE_BITS_PER_SAMPLE  16
 #define ENGINE_BUFFER_SIZE      512   // Match sound.c DMA frame size
+// I2S write timeout: 512 samples at 22050Hz = 23.2ms, use 25ms with margin
+#define I2S_WRITE_TIMEOUT_MS    25
 
 // RPM parameters
 #define IDLE_RPM                100     // Base idle RPM (normalized scale)
@@ -119,6 +121,11 @@ static volatile bool jake_brake_active = false;
 // Shutdown state (for gradual engine stop)
 static volatile uint8_t shutdown_attenuation = 1;    // Volume divider (1 = full, higher = quieter)
 static volatile uint16_t shutdown_speed_pct = 100;   // Speed percentage (100 = normal, higher = slower)
+
+// Deferred NVS save (avoids blocking audio hot path)
+static esp_timer_handle_t nvs_save_timer = NULL;
+static volatile bool nvs_save_pending = false;
+#define NVS_SAVE_DEBOUNCE_MS 500  // Wait 500ms after last change before saving
 
 // Transmission simulation (3-speed automatic)
 // Gear ratios (x10): reverse, 1st, 2nd, 3rd - based on GM Turbo HydraMatic 400
@@ -718,7 +725,7 @@ static esp_err_t play_start_sound(void) {
 
         esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                           ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                          &bytes_written, pdMS_TO_TICKS(500));
+                                          &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
         if (ret != ESP_OK) {
             // Timeout during start sound is less critical, just continue
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -800,7 +807,7 @@ static void engine_sound_task(void *arg) {
 
             esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                              &bytes_written, pdMS_TO_TICKS(500));
+                                              &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
             if (ret != ESP_OK) {
                 // Only log occasionally to avoid flooding
                 static uint32_t error_count = 0;
@@ -836,7 +843,7 @@ static void engine_sound_task(void *arg) {
 
             esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                              &bytes_written, pdMS_TO_TICKS(500));
+                                              &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
             if (ret != ESP_OK) {
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
@@ -919,7 +926,7 @@ static void engine_sound_task(void *arg) {
 
                 esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                                   ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                                  &bytes_written, pdMS_TO_TICKS(500));
+                                                  &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
                 if (ret != ESP_OK) {
                     vTaskDelay(pdMS_TO_TICKS(5));
                 }
@@ -1045,6 +1052,41 @@ static void sound_config_migrate(engine_sound_config_t *old_config, uint32_t old
 }
 
 // ============================================================================
+// Deferred NVS Save (avoids blocking audio hot path)
+// ============================================================================
+
+/**
+ * @brief Timer callback to perform deferred NVS save
+ *
+ * Called after debounce period to write config to flash without blocking audio.
+ */
+static void nvs_save_timer_callback(void *arg)
+{
+    (void)arg;
+    if (nvs_save_pending) {
+        nvs_save_pending = false;
+        nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+        ESP_LOGD(TAG, "Deferred NVS save completed");
+    }
+}
+
+/**
+ * @brief Schedule a deferred NVS save
+ *
+ * Restarts the debounce timer. The actual save happens NVS_SAVE_DEBOUNCE_MS
+ * after the last call to this function.
+ */
+static void schedule_nvs_save(void)
+{
+    nvs_save_pending = true;
+    if (nvs_save_timer) {
+        // Stop and restart timer for debounce behavior
+        esp_timer_stop(nvs_save_timer);
+        esp_timer_start_once(nvs_save_timer, NVS_SAVE_DEBOUNCE_MS * 1000);
+    }
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
@@ -1059,6 +1101,19 @@ esp_err_t engine_sound_init(void) {
     if (!engine_mutex) {
         ESP_LOGE(TAG, "Failed to create mutex");
         return ESP_ERR_NO_MEM;
+    }
+
+    // Create deferred NVS save timer
+    const esp_timer_create_args_t timer_args = {
+        .callback = nvs_save_timer_callback,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "nvs_save"
+    };
+    esp_err_t timer_ret = esp_timer_create(&timer_args, &nvs_save_timer);
+    if (timer_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to create NVS save timer, will use direct saves");
+        nvs_save_timer = NULL;
     }
 
     // Try to load saved config from NVS with migration support
@@ -1158,6 +1213,17 @@ esp_err_t engine_sound_deinit(void) {
 
     // Wait for task to finish
     vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Flush any pending NVS save and cleanup timer
+    if (nvs_save_timer) {
+        esp_timer_stop(nvs_save_timer);
+        if (nvs_save_pending) {
+            nvs_save_pending = false;
+            nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+        }
+        esp_timer_delete(nvs_save_timer);
+        nvs_save_timer = NULL;
+    }
 
     if (engine_mutex) {
         vSemaphoreDelete(engine_mutex);
@@ -1663,8 +1729,8 @@ uint8_t engine_sound_toggle_volume_level(void) {
         mode_switch_sample_pos = 0;
     }
 
-    // Save the new setting to NVS
-    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    // Schedule deferred NVS save (avoids blocking audio hot path)
+    schedule_nvs_save();
 
     return config.active_volume_level;
 }
@@ -1687,8 +1753,8 @@ void engine_sound_set_volume_preset(uint8_t index) {
     // Set both volume levels to the preset value
     config.master_volume_level1 = volume;
     config.master_volume_level2 = volume;
-    // Save to NVS
-    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    // Schedule deferred NVS save (avoids blocking audio hot path)
+    schedule_nvs_save();
     ESP_LOGI(TAG, "Volume set to preset %d (%d%%)", index, volume);
 }
 
