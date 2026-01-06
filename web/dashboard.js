@@ -368,14 +368,14 @@ export class DashboardPage {
             this.updateRcBar(el.rcStrBar, data.s);
         }
 
-        // Raw RC
-        if (data.rc && el.ch1) {
-            el.ch1.textContent = data.rc[0] || '-';
-            el.ch2.textContent = data.rc[1] || '-';
-            el.ch3.textContent = data.rc[2] || '-';
-            el.ch4.textContent = data.rc[3] || '-';
-            el.ch5.textContent = data.rc[4] || '-';
-            el.ch6.textContent = data.rc[5] || '-';
+        // Raw RC - validate array structure before accessing
+        if (data.rc && Array.isArray(data.rc) && data.rc.length >= 6 && el.ch1) {
+            el.ch1.textContent = data.rc[0] ?? '-';
+            el.ch2.textContent = data.rc[1] ?? '-';
+            el.ch3.textContent = data.rc[2] ?? '-';
+            el.ch4.textContent = data.rc[3] ?? '-';
+            el.ch5.textContent = data.rc[4] ?? '-';
+            el.ch6.textContent = data.rc[5] ?? '-';
         }
 
         // System stats
