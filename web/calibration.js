@@ -7,6 +7,12 @@ export class CalibrationPage {
         this.elements = {};
         this.pollTimer = null;
         this.data = null;
+        // Store handler references for cleanup
+        this._calHandlers = [];
+        this._revHandlers = [];
+        this._nextHandler = null;
+        this._cancelHandler = null;
+        this._clearAllHandler = null;
     }
 
     render() {
@@ -96,19 +102,22 @@ export class CalibrationPage {
             this.elements.revToggles[i] = document.getElementById(`cal-rev-${i}`);
             this.elements.calButtons[i] = document.getElementById(`cal-btn-${i}`);
 
-            // Calibrate button
-            this.elements.calButtons[i].addEventListener('click', () => this.startChannel(i));
+            // Store handler references for cleanup
+            this._calHandlers[i] = () => this.startChannel(i);
+            this._revHandlers[i] = () => this.setReversed(i, this.elements.revToggles[i].checked);
 
-            // Reverse toggle
-            this.elements.revToggles[i].addEventListener('change', () => {
-                this.setReversed(i, this.elements.revToggles[i].checked);
-            });
+            this.elements.calButtons[i].addEventListener('click', this._calHandlers[i]);
+            this.elements.revToggles[i].addEventListener('change', this._revHandlers[i]);
         }
 
-        // Wizard buttons
-        this.elements.nextBtn.addEventListener('click', () => this.nextStep());
-        this.elements.cancelBtn.addEventListener('click', () => this.cancel());
-        this.elements.clearAllBtn.addEventListener('click', () => this.clearAll());
+        // Wizard buttons - store handler references
+        this._nextHandler = () => this.nextStep();
+        this._cancelHandler = () => this.cancel();
+        this._clearAllHandler = () => this.clearAll();
+
+        this.elements.nextBtn.addEventListener('click', this._nextHandler);
+        this.elements.cancelBtn.addEventListener('click', this._cancelHandler);
+        this.elements.clearAllBtn.addEventListener('click', this._clearAllHandler);
 
         // Load initial state
         this.loadState();
@@ -263,5 +272,26 @@ export class CalibrationPage {
 
     destroy() {
         this.stopPolling();
+
+        // Remove channel event listeners
+        for (let i = 0; i < 6; i++) {
+            if (this.elements.calButtons[i] && this._calHandlers[i]) {
+                this.elements.calButtons[i].removeEventListener('click', this._calHandlers[i]);
+            }
+            if (this.elements.revToggles[i] && this._revHandlers[i]) {
+                this.elements.revToggles[i].removeEventListener('change', this._revHandlers[i]);
+            }
+        }
+
+        // Remove wizard button listeners
+        if (this.elements.nextBtn && this._nextHandler) {
+            this.elements.nextBtn.removeEventListener('click', this._nextHandler);
+        }
+        if (this.elements.cancelBtn && this._cancelHandler) {
+            this.elements.cancelBtn.removeEventListener('click', this._cancelHandler);
+        }
+        if (this.elements.clearAllBtn && this._clearAllHandler) {
+            this.elements.clearAllBtn.removeEventListener('click', this._clearAllHandler);
+        }
     }
 }

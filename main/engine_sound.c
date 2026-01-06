@@ -187,6 +187,28 @@ static uint32_t horn_sample_pos = 0;
 // I2S handle (shared with sound.c - we'll get it from there)
 extern i2s_chan_handle_t tx_handle;
 
+// Deferred NVS save (avoids blocking audio hot path)
+static esp_timer_handle_t nvs_save_timer = NULL;
+static bool config_dirty = false;
+#define NVS_SAVE_DEBOUNCE_MS 1000  // Save 1 second after last change
+
+static void nvs_save_timer_callback(void *arg) {
+    (void)arg;
+    if (config_dirty) {
+        nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+        config_dirty = false;
+        ESP_LOGI(TAG, "Config saved to NVS (deferred)");
+    }
+}
+
+static void schedule_config_save(void) {
+    config_dirty = true;
+    if (nvs_save_timer) {
+        esp_timer_stop(nvs_save_timer);  // Reset debounce
+        esp_timer_start_once(nvs_save_timer, NVS_SAVE_DEBOUNCE_MS * 1000);
+    }
+}
+
 /**
  * @brief Get the currently active master volume
  *
@@ -1061,6 +1083,13 @@ esp_err_t engine_sound_init(void) {
         return ESP_ERR_NO_MEM;
     }
 
+    // Create deferred NVS save timer
+    const esp_timer_create_args_t timer_args = {
+        .callback = nvs_save_timer_callback,
+        .name = "nvs_save"
+    };
+    esp_timer_create(&timer_args, &nvs_save_timer);
+
     // Try to load saved config from NVS with migration support
     engine_sound_config_t saved_config;
     size_t config_len = sizeof(engine_sound_config_t);
@@ -1158,6 +1187,17 @@ esp_err_t engine_sound_deinit(void) {
 
     // Wait for task to finish
     vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Flush any pending config save
+    if (nvs_save_timer) {
+        esp_timer_stop(nvs_save_timer);
+        if (config_dirty) {
+            nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+            config_dirty = false;
+        }
+        esp_timer_delete(nvs_save_timer);
+        nvs_save_timer = NULL;
+    }
 
     if (engine_mutex) {
         vSemaphoreDelete(engine_mutex);
@@ -1663,8 +1703,8 @@ uint8_t engine_sound_toggle_volume_level(void) {
         mode_switch_sample_pos = 0;
     }
 
-    // Save the new setting to NVS
-    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    // Schedule deferred NVS save (avoid blocking audio)
+    schedule_config_save();
 
     return config.active_volume_level;
 }
@@ -1687,8 +1727,8 @@ void engine_sound_set_volume_preset(uint8_t index) {
     // Set both volume levels to the preset value
     config.master_volume_level1 = volume;
     config.master_volume_level2 = volume;
-    // Save to NVS
-    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    // Schedule deferred NVS save (avoid blocking audio)
+    schedule_config_save();
     ESP_LOGI(TAG, "Volume set to preset %d (%d%%)", index, volume);
 }
 

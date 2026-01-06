@@ -11,6 +11,7 @@
 #include "calibration.h"
 #include "pwm_output.h"
 #include "engine_sound.h"
+#include "metrics.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -450,17 +451,14 @@ static esp_err_t ws_handler(httpd_req_t *req)
         return ret;
     }
     
-    // Allocate buffer and receive payload
+    // Receive payload into static buffer (avoids heap fragmentation at 10Hz)
     if (ws_pkt.len > 0 && ws_pkt.len < 256) {
-        uint8_t *buf = malloc(ws_pkt.len + 1);
-        if (buf) {
-            ws_pkt.payload = buf;
-            ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-            if (ret == ESP_OK) {
-                buf[ws_pkt.len] = '\0';
-                parse_ws_command((const char *)buf, ws_pkt.len);
-            }
-            free(buf);
+        static uint8_t buf[256];
+        ws_pkt.payload = buf;
+        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+        if (ret == ESP_OK) {
+            buf[ws_pkt.len] = '\0';
+            parse_ws_command((const char *)buf, ws_pkt.len);
         }
     }
     
@@ -1013,6 +1011,18 @@ static esp_err_t sound_profiles_handler(httpd_req_t *req)
 }
 
 /**
+ * @brief Metrics GET handler - returns performance metrics
+ */
+static esp_err_t metrics_get_handler(httpd_req_t *req)
+{
+    char response[512];
+    metrics_to_json(response, sizeof(response));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, response);
+    return ESP_OK;
+}
+
+/**
  * @brief Build calibration JSON response
  */
 static int build_calibration_response(char *buf, size_t bufsize, const char *result)
@@ -1386,6 +1396,15 @@ static esp_err_t start_webserver(void)
         .user_ctx = NULL
     };
     httpd_register_uri_handler(server, &sound_profiles);
+
+    // Metrics API - GET
+    httpd_uri_t metrics = {
+        .uri = "/api/metrics",
+        .method = HTTP_GET,
+        .handler = metrics_get_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &metrics);
 
     // Static file handler (wildcard for all other requests)
     httpd_uri_t file = {

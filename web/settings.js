@@ -1,5 +1,8 @@
 // Settings Page - WiFi, OTA updates, SPIFFS management
 
+// Escape HTML special characters to prevent XSS
+const escapeHtml = (str) => str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]));
+
 export class SettingsPage {
     constructor() {
         this.elements = {};
@@ -325,7 +328,7 @@ export class SettingsPage {
                     data.files.forEach(f => {
                         const size = f.size < 1024 ? f.size + ' B' : (f.size / 1024).toFixed(1) + ' KB';
                         html += '<div class="spiffs-file-row">' +
-                            '<span class="spiffs-filename">' + f.name + '</span>' +
+                            '<span class="spiffs-filename">' + escapeHtml(f.name) + '</span>' +
                             '<span class="spiffs-filesize">' + size + '</span>' +
                             '</div>';
                     });
