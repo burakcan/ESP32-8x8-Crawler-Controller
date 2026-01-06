@@ -756,9 +756,10 @@ static esp_err_t play_start_sound(void) {
             buffer[i * 2 + 1] = (int16_t)scaled;
         }
 
+        // Use ~23ms timeout (512 samples at 22050Hz) instead of 500ms to avoid blocking
         esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                           ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                          &bytes_written, pdMS_TO_TICKS(500));
+                                          &bytes_written, pdMS_TO_TICKS(25));
         if (ret != ESP_OK) {
             // Timeout during start sound is less critical, just continue
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -838,9 +839,10 @@ static void engine_sound_task(void *arg) {
             // Mix and output engine sound
             mix_engine_samples(buffer, ENGINE_BUFFER_SIZE);
 
+            // Use ~23ms timeout to avoid blocking audio task
             esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                              &bytes_written, pdMS_TO_TICKS(500));
+                                              &bytes_written, pdMS_TO_TICKS(25));
             if (ret != ESP_OK) {
                 // Only log occasionally to avoid flooding
                 static uint32_t error_count = 0;
@@ -874,9 +876,10 @@ static void engine_sound_task(void *arg) {
             // Mix shutdown sound (fading out and slowing down)
             mix_shutdown_samples(buffer, ENGINE_BUFFER_SIZE);
 
+            // Use ~23ms timeout to avoid blocking audio task
             esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                              &bytes_written, pdMS_TO_TICKS(500));
+                                              &bytes_written, pdMS_TO_TICKS(25));
             if (ret != ESP_OK) {
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
@@ -957,9 +960,10 @@ static void engine_sound_task(void *arg) {
                     buffer[i * 2 + 1] = (int16_t)mix;
                 }
 
+                // Use ~23ms timeout to avoid blocking audio task
                 esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                                   ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                                  &bytes_written, pdMS_TO_TICKS(500));
+                                                  &bytes_written, pdMS_TO_TICKS(25));
                 if (ret != ESP_OK) {
                     vTaskDelay(pdMS_TO_TICKS(5));
                 }

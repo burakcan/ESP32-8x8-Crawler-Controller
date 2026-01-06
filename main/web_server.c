@@ -4,6 +4,7 @@
  */
 
 #include "web_server.h"
+#include "perf_metrics.h"
 #include "ota_update.h"
 #include "version.h"
 #include "nvs_storage.h"
@@ -450,17 +451,14 @@ static esp_err_t ws_handler(httpd_req_t *req)
         return ret;
     }
     
-    // Allocate buffer and receive payload
-    if (ws_pkt.len > 0 && ws_pkt.len < 256) {
-        uint8_t *buf = malloc(ws_pkt.len + 1);
-        if (buf) {
-            ws_pkt.payload = buf;
-            ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-            if (ret == ESP_OK) {
-                buf[ws_pkt.len] = '\0';
-                parse_ws_command((const char *)buf, ws_pkt.len);
-            }
-            free(buf);
+    // Use static buffer to avoid malloc/free in hot path (10Hz updates)
+    static uint8_t ws_buf[256];
+    if (ws_pkt.len > 0 && ws_pkt.len < sizeof(ws_buf)) {
+        ws_pkt.payload = ws_buf;
+        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+        if (ret == ESP_OK) {
+            ws_buf[ws_pkt.len] = '\0';
+            parse_ws_command((const char *)ws_buf, ws_pkt.len);
         }
     }
     
@@ -515,6 +513,18 @@ static esp_err_t bootloader_handler(httpd_req_t *req)
 /**
  * @brief WiFi settings GET handler - returns current config
  */
+/**
+ * @brief Performance metrics GET handler
+ */
+static esp_err_t metrics_handler(httpd_req_t *req)
+{
+    static char response[512];
+    perf_metrics_to_json(response, sizeof(response));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, response);
+    return ESP_OK;
+}
+
 static esp_err_t wifi_get_handler(httpd_req_t *req)
 {
     char response[256];
@@ -1260,6 +1270,15 @@ static esp_err_t start_webserver(void)
 
     // Register OTA handlers (before wildcard file handler)
     ota_register_handlers(server);
+
+    // Performance metrics API
+    httpd_uri_t metrics = {
+        .uri = "/api/metrics",
+        .method = HTTP_GET,
+        .handler = metrics_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &metrics);
 
     // WiFi settings API - GET
     httpd_uri_t wifi_get = {
