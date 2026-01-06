@@ -50,6 +50,9 @@ static esp_timer_handle_t sta_connect_timer = NULL;
 #define STA_RETRY_DELAY_MS 5000
 #define STA_INITIAL_DELAY_MS 2000
 
+// Pre-cached JSON fragments for faster status updates
+static char json_version_fragment[64] = "";  // "\",\"v\":\"x.y.z\",\"b\":\"YYMMDD.HHMM\""
+
 // Timer callback for delayed WiFi connect (avoids blocking event loop)
 static void sta_connect_timer_cb(void *arg) {
     ESP_LOGI(TAG, "WiFi STA: connecting now...");
@@ -624,8 +627,8 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
 {
     const tuning_config_t *cfg = tuning_get_config();
 
-    // Build JSON response - servo settings
-    char response[1024];
+    // Build JSON response - servo settings (~600 bytes actual, 768 with margin)
+    char response[768];
     int len = snprintf(response, sizeof(response),
         "{"
         "\"servos\":["
@@ -715,7 +718,8 @@ static bool parse_json_bool(const char *json, const char *key, bool *value)
  */
 static esp_err_t tuning_post_handler(httpd_req_t *req)
 {
-    char buf[1024];
+    // Reduced buffer - tuning JSON payload ~400 bytes max
+    char buf[512];
     int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (received <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
@@ -827,8 +831,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
     sound_profile_t profile = engine_sound_get_profile();
     const char *profile_name = sound_profiles_get_name(profile);
 
-    // Build JSON response (increased buffer for effect settings)
-    char response[1024];
+    // Build JSON response for effect settings (~700 bytes actual, 768 with margin)
+    char response[768];
     snprintf(response, sizeof(response),
         "{"
         "\"profile\":%d,"
@@ -918,7 +922,8 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
  */
 static esp_err_t sound_post_handler(httpd_req_t *req)
 {
-    char buf[1024];  // Increased for effect settings
+    // Reduced buffer - sound config JSON payload ~500 bytes max
+    char buf[640];
     int received = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (received <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data");
@@ -1446,6 +1451,10 @@ esp_err_t web_server_init(void)
         return ret;
     }
 
+    // Pre-cache static JSON fragments for faster 10Hz status updates
+    snprintf(json_version_fragment, sizeof(json_version_fragment),
+             ",\"v\":\"%s\",\"b\":\"%s\"", FW_VERSION, FW_BUILD_DATE);
+
     ESP_LOGI(TAG, "Web server ready!");
     return ESP_OK;
 }
@@ -1458,53 +1467,61 @@ void web_server_update_status(const web_status_t *status)
 
     if (ws_fd < 0 || server == NULL) return;
 
-    // Build JSON status
-    // Main: t=throttle, s=steering, x1-x4=aux channels, e=esc, a1-a4=axle servos, m=mode
-    // Status: ui=ui_override, sl=signal_lost, cd=calibrated, cg=calibrating, cp=cal_progress
-    // Info: u=uptime_ms, v=version, b=build
-    // Monitor: rc=raw_pulses[6], h=heap_free, hm=heap_min, rs=rssi
-    // WiFi: wse=wifi_sta_enabled, wsc=wifi_sta_connected, wss=wifi_sta_ssid, wsi=wifi_sta_ip
-    //       wsr=wifi_sta_reason (disconnect reason code), wsrs=wifi_sta_reason_str
-
+    // Build JSON status using pre-cached fragments for faster 10Hz updates
+    // Split into multiple smaller snprintf calls for better performance
     char json[896];
-    int len = snprintf(json, sizeof(json),
+    char *p = json;
+    int remaining = sizeof(json);
+    int n;
+
+    // Part 1: RC channels and servos (most frequently changing)
+    n = snprintf(p, remaining,
         "{\"t\":%d,\"s\":%d,\"x1\":%d,\"x2\":%d,\"x3\":%d,\"x4\":%d,\"e\":%u,"
-        "\"a1\":%u,\"a2\":%u,\"a3\":%u,\"a4\":%u,"
-        "\"m\":%u,\"ui\":%s,\"sl\":%s,\"cd\":%s,\"cg\":%s,\"cp\":%u,"
-        "\"u\":%lu,\"v\":\"%s\",\"b\":\"%s\","
-        "\"rc\":[%u,%u,%u,%u,%u,%u],\"h\":%lu,\"hm\":%lu,\"rs\":%d,"
-        "\"wse\":%s,\"wsc\":%s,\"wss\":\"%s\",\"wsi\":\"%s\",\"wsr\":%u,\"wsrs\":\"%s\"}",
-        status->rc_throttle,
-        status->rc_steering,
-        status->rc_aux1,
-        status->rc_aux2,
-        status->rc_aux3,
-        status->rc_aux4,
+        "\"a1\":%u,\"a2\":%u,\"a3\":%u,\"a4\":%u,\"m\":%u",
+        status->rc_throttle, status->rc_steering,
+        status->rc_aux1, status->rc_aux2, status->rc_aux3, status->rc_aux4,
         status->esc_pulse,
-        status->servo_a1,
-        status->servo_a2,
-        status->servo_a3,
-        status->servo_a4,
-        status->steering_mode,
+        status->servo_a1, status->servo_a2, status->servo_a3, status->servo_a4,
+        status->steering_mode);
+    p += n; remaining -= n;
+
+    // Part 2: Status flags (boolean values - use direct strings)
+    n = snprintf(p, remaining,
+        ",\"ui\":%s,\"sl\":%s,\"cd\":%s,\"cg\":%s,\"cp\":%u,\"u\":%lu",
         ui_mode_override ? "true" : "false",
         status->signal_lost ? "true" : "false",
         status->calibrated ? "true" : "false",
         status->calibrating ? "true" : "false",
         status->cal_progress,
-        (unsigned long)status->uptime_ms,
-        FW_VERSION,
-        FW_BUILD_DATE,
-        status->rc_raw[0], status->rc_raw[1], status->rc_raw[2], status->rc_raw[3], status->rc_raw[4], status->rc_raw[5],
+        (unsigned long)status->uptime_ms);
+    p += n; remaining -= n;
+
+    // Part 3: Version info (pre-cached, never changes)
+    n = snprintf(p, remaining, "%s", json_version_fragment);
+    p += n; remaining -= n;
+
+    // Part 4: RC raw values and heap stats
+    n = snprintf(p, remaining,
+        ",\"rc\":[%u,%u,%u,%u,%u,%u],\"h\":%lu,\"hm\":%lu,\"rs\":%d",
+        status->rc_raw[0], status->rc_raw[1], status->rc_raw[2],
+        status->rc_raw[3], status->rc_raw[4], status->rc_raw[5],
         (unsigned long)status->heap_free,
         (unsigned long)status->heap_min,
-        status->wifi_rssi,
+        status->wifi_rssi);
+    p += n; remaining -= n;
+
+    // Part 5: WiFi status (strings need careful handling)
+    n = snprintf(p, remaining,
+        ",\"wse\":%s,\"wsc\":%s,\"wss\":\"%s\",\"wsi\":\"%s\",\"wsr\":%u,\"wsrs\":\"%s\"}",
         sta_config.enabled ? "true" : "false",
         sta_connected ? "true" : "false",
         sta_config.ssid,
         sta_ip_addr_str,
         sta_disconnect_reason,
-        sta_disconnect_reason ? wifi_disconnect_reason_str(sta_disconnect_reason) : ""
-    );
+        sta_disconnect_reason ? wifi_disconnect_reason_str(sta_disconnect_reason) : "");
+    p += n;
+
+    int len = (int)(p - json);
 
     httpd_ws_frame_t ws_pkt = {
         .final = true,

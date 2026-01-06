@@ -194,11 +194,24 @@ esp_err_t rc_input_get_all_raw(rc_channel_raw_t raw[RC_CHANNEL_COUNT])
     if (raw == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    
+
+    // Acquire mutex once for all channels instead of 6 times
+    xSemaphoreTake(data_mutex, portMAX_DELAY);
+
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+
     for (int i = 0; i < RC_CHANNEL_COUNT; i++) {
-        rc_input_get_raw((rc_channel_t)i, &raw[i]);
+        raw[i].pulse_us = channel_data[i].pulse_us;
+        raw[i].valid = channel_data[i].valid;
+        raw[i].last_update = channel_data[i].last_update;
+
+        // Check for signal timeout
+        if (raw[i].valid && (now - raw[i].last_update) > RC_SIGNAL_TIMEOUT_MS) {
+            raw[i].valid = false;
+        }
     }
-    
+
+    xSemaphoreGive(data_mutex);
     return ESP_OK;
 }
 
