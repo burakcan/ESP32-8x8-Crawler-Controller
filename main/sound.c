@@ -473,13 +473,63 @@ esp_err_t sound_play_boot_chime(void) {
 
     ESP_LOGI(TAG, "Playing boot chime...");
 
-    // Simple two-tone boot chime - quick and clean
-    // Low tone followed by higher tone (like a "ready" confirmation)
-    generate_simple_tone(440, 80, 70);    // A4 - first beep
-    vTaskDelay(pdMS_TO_TICKS(50));
-    generate_simple_tone(880, 120, 75);   // A5 - second beep (octave up)
+    // Simple, bright 3-note ascending chime
+    // Quick and cheerful - like a friendly notification
+    // C5 -> E5 -> G5 (major triad arpeggio) then resolve to C6
+
+    generate_simple_tone(523, 120, 18);   // C5 - quick start
+    vTaskDelay(pdMS_TO_TICKS(80));
+    generate_simple_tone(659, 120, 20);   // E5 - major third
+    vTaskDelay(pdMS_TO_TICKS(80));
+    generate_simple_tone(784, 150, 22);   // G5 - fifth
+    vTaskDelay(pdMS_TO_TICKS(100));
+    generate_simple_tone(1047, 350, 18);  // C6 - octave resolution, longer
 
     ESP_LOGI(TAG, "Boot chime complete");
+    return ESP_OK;
+}
+
+esp_err_t sound_play_mode_beep(steering_mode_t mode) {
+    if (!sound_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Distinctive beep patterns for each steering mode
+    // All use the same volume for consistency (matched to boot chime level)
+    const uint8_t vol = 25;
+
+    switch (mode) {
+        case STEER_MODE_FRONT:
+            // Single high beep - simple, default mode
+            generate_simple_tone(1319, 80, vol);    // E6
+            break;
+
+        case STEER_MODE_ALL_AXLE:
+            // Rising two-tone - "going up" to more capability
+            generate_simple_tone(880, 60, vol);     // A5
+            vTaskDelay(pdMS_TO_TICKS(40));
+            generate_simple_tone(1175, 80, vol);    // D6
+            break;
+
+        case STEER_MODE_CRAB:
+            // Three quick beeps - distinctive "special" mode
+            generate_simple_tone(988, 50, vol);     // B5
+            vTaskDelay(pdMS_TO_TICKS(50));
+            generate_simple_tone(988, 50, vol);     // B5
+            vTaskDelay(pdMS_TO_TICKS(50));
+            generate_simple_tone(988, 50, vol);     // B5
+            break;
+
+        case STEER_MODE_REAR:
+            // Low beep - rear/backwards association
+            generate_simple_tone(659, 100, vol);    // E5
+            break;
+
+        default:
+            generate_simple_tone(1047, 60, vol);    // C6 fallback
+            break;
+    }
+
     return ESP_OK;
 }
 
@@ -534,6 +584,56 @@ esp_err_t sound_play(sound_effect_t effect) {
             break;
         }
 
+        case SOUND_MENU_ENTER: {
+            // Long high beep - unmistakable menu entry
+            generate_simple_tone(1000, 300, 75);
+            break;
+        }
+
+        case SOUND_MENU_BACK: {
+            // Short low beep - going back
+            generate_simple_tone(600, 100, 60);
+            break;
+        }
+
+        case SOUND_MENU_CONFIRM: {
+            // Two quick high beeps - success!
+            generate_simple_tone(1200, 80, 75);
+            vTaskDelay(pdMS_TO_TICKS(60));
+            generate_simple_tone(1200, 80, 75);
+            break;
+        }
+
+        case SOUND_MENU_CANCEL: {
+            // One low beep - cancelled/timeout
+            generate_simple_tone(400, 150, 60);
+            break;
+        }
+
+        case SOUND_BEEP_1: {
+            // 1 beep - category/option 1
+            generate_simple_tone(800, 120, 70);
+            break;
+        }
+
+        case SOUND_BEEP_2: {
+            // 2 beeps - category/option 2
+            generate_simple_tone(800, 100, 70);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            generate_simple_tone(800, 100, 70);
+            break;
+        }
+
+        case SOUND_BEEP_3: {
+            // 3 beeps - category/option 3
+            generate_simple_tone(800, 80, 70);
+            vTaskDelay(pdMS_TO_TICKS(80));
+            generate_simple_tone(800, 80, 70);
+            vTaskDelay(pdMS_TO_TICKS(80));
+            generate_simple_tone(800, 80, 70);
+            break;
+        }
+
         default:
             return ESP_ERR_INVALID_ARG;
     }
@@ -572,4 +672,69 @@ void sound_set_volume(uint8_t volume) {
 
 uint8_t sound_get_volume(void) {
     return master_volume;
+}
+
+esp_err_t sound_play_sample(const int8_t *samples, uint32_t sample_count,
+                            uint32_t sample_rate, uint8_t volume) {
+    if (!sound_initialized || tx_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (samples == NULL || sample_count == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (volume > 100) volume = 100;
+
+    // Buffer for I2S output (stereo 16-bit)
+    size_t buffer_samples = 256;
+    int16_t *buffer = heap_caps_malloc(buffer_samples * sizeof(int16_t) * 2, MALLOC_CAP_DMA);
+    if (!buffer) {
+        ESP_LOGE(TAG, "Failed to allocate sample buffer");
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Volume scaling: 8-bit (-128 to 127) -> 16-bit with volume
+    float scale = (256.0f * volume * master_volume) / 10000.0f;
+
+    sound_playing = true;
+    size_t bytes_written = 0;
+    uint32_t sample_index = 0;
+
+    // Simple resampling support (if sample_rate differs from SAMPLE_RATE)
+    float rate_ratio = (float)sample_rate / SAMPLE_RATE;
+    float src_pos = 0.0f;
+
+    while (sample_index < sample_count && sound_playing) {
+        uint32_t chunk_samples = 0;
+
+        // Fill buffer with converted samples
+        for (uint32_t i = 0; i < buffer_samples && src_pos < sample_count; i++) {
+            // Get source sample (with simple linear interpolation)
+            uint32_t idx = (uint32_t)src_pos;
+            if (idx >= sample_count) break;
+
+            // Convert 8-bit signed to 16-bit
+            int16_t sample16 = (int16_t)(samples[idx] * scale);
+
+            // Stereo (duplicate to both channels)
+            buffer[i * 2] = sample16;
+            buffer[i * 2 + 1] = sample16;
+
+            src_pos += rate_ratio;
+            chunk_samples++;
+        }
+
+        if (chunk_samples == 0) break;
+
+        // Write to I2S
+        i2s_channel_write(tx_handle, buffer, chunk_samples * sizeof(int16_t) * 2,
+                          &bytes_written, pdMS_TO_TICKS(1000));
+
+        sample_index = (uint32_t)src_pos;
+    }
+
+    free(buffer);
+    sound_playing = false;
+    return ESP_OK;
 }

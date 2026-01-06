@@ -13,6 +13,16 @@
 #define MODE_SWITCH_H
 
 #include "config.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+/**
+ * @brief Callback type for long-press detection
+ *
+ * Called when button is held for the configured threshold time.
+ * The callback should handle entering menu mode or other long-press actions.
+ */
+typedef void (*mode_switch_longpress_cb_t)(void);
 
 /**
  * @brief Initialize the mode switch module
@@ -55,5 +65,42 @@ void mode_switch_set_mode(steering_mode_t mode);
  * @return true if mode changed
  */
 bool mode_switch_mode_changed(void);
+
+/**
+ * @brief Register a callback for long-press detection
+ *
+ * When the button is held for threshold_ms milliseconds, the callback
+ * will be fired and the multi-click state machine will be reset.
+ *
+ * @param cb Callback function (NULL to disable)
+ * @param threshold_ms Long-press threshold in milliseconds (e.g., 1500)
+ */
+void mode_switch_set_longpress_callback(mode_switch_longpress_cb_t cb, uint32_t threshold_ms);
+
+/**
+ * @brief Enable or disable steering mode changes
+ *
+ * When disabled, button presses are still tracked but mode changes
+ * are suppressed. Use this when menu is active.
+ *
+ * @param enabled true to allow mode changes, false to suppress
+ */
+void mode_switch_set_enabled(bool enabled);
+
+/**
+ * @brief Check if steering mode changes are currently enabled
+ *
+ * @return true if mode changes are enabled
+ */
+bool mode_switch_is_enabled(void);
+
+/**
+ * @brief Get current button pressed state
+ *
+ * Returns the last known button state from the most recent update.
+ *
+ * @return true if button is currently pressed
+ */
+bool mode_switch_get_button_pressed(void);
 
 #endif // MODE_SWITCH_H

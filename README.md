@@ -31,10 +31,10 @@ ESP32-S3 based controller for an 8x8 RC crawler with multi-axle steering support
 | ----------- | ---- | -------------------------------- |
 | RC Steering | 6 | Channel 1 input |
 | RC Throttle | 5 | Channel 2 input |
-| RC Aux1 | 4 | Channel 3 input (horn) |
-| RC Aux2 | 3 | Channel 4 input (mode switch) |
-| RC Aux3 | 2 | Channel 5 input (engine/WiFi) |
-| RC Aux4 | 1 | Channel 6 input (throttle mode) |
+| RC Aux1 | 4 | Channel 3 input (horn / menu confirm) |
+| RC Aux2 | 3 | Channel 4 input (steering mode / menu) |
+| RC Aux3 | 2 | Channel 5 input (throttle mode - 3-pos switch) |
+| RC Aux4 | 1 | Channel 6 input (engine on/off) |
 | ESC | 12 | Motor ESC signal output |
 | Servo A1 | 8 | Axle 1 (front) servo |
 | Servo A2 | 9 | Axle 2 servo |
@@ -154,13 +154,14 @@ THR:+500 STR:-200 | ESC:1750 | Mode:0
 
 **Option 1: Web UI** - Tap mode buttons in the dashboard. Click "Auto" to return to RC control.
 
-**Option 2: Channel 4 Momentary Button** - Configure CH4 as a momentary button on your transmitter:
+**Option 2: AUX2 Momentary Button** - Configure CH4 as a momentary button on your transmitter:
 
 | Press Pattern | Action |
 | ------------- | ------ |
 | Single press | Toggle between Front and All-Axle steering |
 | Double press | Switch to Crab mode |
 | Triple press | Switch to Rear-only steering |
+| Hold 1.5s | Enter settings menu |
 
 **Returning from special modes:** When in Crab or Rear mode, a single press returns to the last active normal mode (Front or All-Axle).
 
@@ -223,13 +224,50 @@ Front and rear turn in opposite directions. Creates a very tight turning circle.
 
 All axles point the same direction. Vehicle moves sideways like a crab. Great for parallel parking.
 
+## RC Controls
+
+### Channel Assignments
+
+| RC Channel | Control Type | Function |
+| ---------- | ------------ | -------- |
+| CH1 | Trigger | Throttle |
+| CH2 | Wheel | Steering |
+| CH3 (AUX1) | Momentary button | Horn (hold) / Menu confirm |
+| CH4 (AUX2) | Momentary button | Steering mode + Menu entry |
+| CH5 (AUX3) | 3-position switch | Throttle mode (Direct/Neutral/Realistic) |
+| CH6 (AUX4) | Momentary button | Engine on/off |
+
+### Settings Menu
+
+Long-press AUX2 (1.5 seconds) to enter the settings menu. The menu has 2 levels:
+
+**Level 1 - Categories:**
+- Volume (1 beep)
+- Sound Profile (2 beeps)
+- WiFi (3 beeps)
+
+**Level 2 - Options:**
+- Volume: Low (50%), Medium (100%), High (150%)
+- Profile: CAT 3408, Unimog, MAN TGX
+- WiFi: On, Off
+
+**Navigation:**
+| Button | Level 1 | Level 2 |
+| ------ | ------- | ------- |
+| AUX2 press | Cycle categories | Cycle options |
+| AUX1 press | Enter category | Confirm & exit |
+| AUX2 hold | Exit menu | Back to Level 1 |
+| 4s timeout | Exit menu | Exit menu |
+
 ## Horn
 
-Press and hold the **Channel 3 (AUX1)** button to sound the horn. The horn plays continuously while the button is held.
+Press and hold **AUX1** to sound the horn. The horn plays continuously while the button is held.
+
+**Note:** When in the settings menu, AUX1 is used for menu confirmation instead of horn.
 
 ### Horn Types
 
-Three horn sounds are available, selectable in the web UI Sound Settings:
+Three horn sounds are available, selectable in the web UI Sound Settings or via menu:
 
 | Horn Type | Description |
 | --------- | ----------- |

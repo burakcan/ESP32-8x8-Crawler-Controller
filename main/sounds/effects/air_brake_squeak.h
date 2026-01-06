@@ -1,5 +1,3 @@
-// Air brake squeak sound for mode change feedback
-// Source: Rc_Engine_Sound_ESP32 project (AirBrakeSqueak.h)
 const unsigned int modeSwitchSampleRate = 22050;
 const unsigned int modeSwitchSampleCount = 9202;
 const signed char modeSwitchSamples[] = {

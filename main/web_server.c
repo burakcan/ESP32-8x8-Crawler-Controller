@@ -826,6 +826,10 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         "\"masterVolumeLevel1\":%d,"
         "\"masterVolumeLevel2\":%d,"
         "\"activeVolumeLevel\":%d,"
+        "\"volumePresetLow\":%d,"
+        "\"volumePresetMedium\":%d,"
+        "\"volumePresetHigh\":%d,"
+        "\"currentVolumePreset\":%d,"
         "\"idleVolume\":%d,"
         "\"revVolume\":%d,"
         "\"knockVolume\":%d,"
@@ -860,6 +864,10 @@ static esp_err_t sound_get_handler(httpd_req_t *req)
         cfg->master_volume_level1,
         cfg->master_volume_level2,
         cfg->active_volume_level,
+        cfg->volume_preset_low,
+        cfg->volume_preset_medium,
+        cfg->volume_preset_high,
+        engine_sound_get_current_volume_preset_index(),
         cfg->idle_volume,
         cfg->rev_volume,
         cfg->knock_volume,
@@ -928,6 +936,9 @@ static esp_err_t sound_post_handler(httpd_req_t *req)
     if (parse_json_int(buf, "masterVolumeLevel1", &val)) cfg.master_volume_level1 = val;
     if (parse_json_int(buf, "masterVolumeLevel2", &val)) cfg.master_volume_level2 = val;
     if (parse_json_int(buf, "activeVolumeLevel", &val)) cfg.active_volume_level = val;
+    if (parse_json_int(buf, "volumePresetLow", &val)) cfg.volume_preset_low = val;
+    if (parse_json_int(buf, "volumePresetMedium", &val)) cfg.volume_preset_medium = val;
+    if (parse_json_int(buf, "volumePresetHigh", &val)) cfg.volume_preset_high = val;
     if (parse_json_int(buf, "idleVolume", &val)) cfg.idle_volume = val;
     if (parse_json_int(buf, "revVolume", &val)) cfg.rev_volume = val;
     if (parse_json_int(buf, "knockVolume", &val)) cfg.knock_volume = val;
