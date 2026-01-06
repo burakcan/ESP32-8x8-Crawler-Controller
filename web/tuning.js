@@ -5,6 +5,16 @@ export class TuningPage {
         this.elements = {};
         this.config = null;
         this.toastTimer = null;
+        // Track handlers for cleanup
+        this._handlers = [];
+    }
+
+    // Add event listener and track for cleanup
+    _addHandler(element, event, handler) {
+        if (element) {
+            element.addEventListener(event, handler);
+            this._handlers.push({ element, event, handler });
+        }
     }
 
     render() {
@@ -215,9 +225,9 @@ export class TuningPage {
             // Bidirectional sync for servo trim
             this.syncSliderAndInput(this.elements.servos[i].trim, this.elements.servos[i].trimNum);
 
-            this.elements.servos[i].min.addEventListener('change', () => this.scheduleAutoSave());
-            this.elements.servos[i].max.addEventListener('change', () => this.scheduleAutoSave());
-            this.elements.servos[i].rev.addEventListener('change', () => this.scheduleAutoSave());
+            this._addHandler(this.elements.servos[i].min, 'change', () => this.scheduleAutoSave());
+            this._addHandler(this.elements.servos[i].max, 'change', () => this.scheduleAutoSave());
+            this._addHandler(this.elements.servos[i].rev, 'change', () => this.scheduleAutoSave());
         }
 
         // Collect ratio elements
@@ -238,14 +248,14 @@ export class TuningPage {
         this.syncSliderAndInput(this.elements.escSubtrim, this.elements.escSubtrimNum);
         this.syncSliderAndInput(this.elements.escDeadzone, this.elements.escDeadzoneNum);
 
-        this.elements.escReversed.addEventListener('change', () => this.scheduleAutoSave());
+        this._addHandler(this.elements.escReversed, 'change', () => this.scheduleAutoSave());
 
         // Sync slider/input pairs for realistic throttle
         this.syncSliderAndInput(this.elements.escCoast, this.elements.escCoastNum);
         this.syncSliderAndInput(this.elements.escBrake, this.elements.escBrakeNum);
         this.syncSliderAndInput(this.elements.escMotorCutoff, this.elements.escMotorCutoffNum);
 
-        this.elements.escRealistic.addEventListener('change', () => this.scheduleAutoSave());
+        this._addHandler(this.elements.escRealistic, 'change', () => this.scheduleAutoSave());
 
         // Servo test mode - collect elements and setup
         for (let i = 0; i < 4; i++) {
@@ -254,22 +264,22 @@ export class TuningPage {
                 num: document.getElementById(`servo-test-${i}-num`)
             };
             // Sync slider and number (don't auto-save, send immediately)
-            this.elements.servoTest[i].slider.addEventListener('input', () => {
+            this._addHandler(this.elements.servoTest[i].slider, 'input', () => {
                 this.elements.servoTest[i].num.value = this.elements.servoTest[i].slider.value;
                 this.sendServoTest();
             });
-            this.elements.servoTest[i].num.addEventListener('input', () => {
+            this._addHandler(this.elements.servoTest[i].num, 'input', () => {
                 this.elements.servoTest[i].slider.value = this.elements.servoTest[i].num.value;
                 this.sendServoTest();
             });
         }
 
         // Servo test mode toggle
-        this.elements.servoTestActive.addEventListener('change', () => this.toggleServoTest());
-        this.elements.servoTestCenter.addEventListener('click', () => this.centerAllServos());
+        this._addHandler(this.elements.servoTestActive, 'change', () => this.toggleServoTest());
+        this._addHandler(this.elements.servoTestCenter, 'click', () => this.centerAllServos());
 
         // Button handlers
-        this.elements.resetBtn.addEventListener('click', () => this.resetConfig());
+        this._addHandler(this.elements.resetBtn, 'click', () => this.resetConfig());
 
         // Load initial config
         this.loadConfig();
@@ -278,11 +288,11 @@ export class TuningPage {
 
     // Sync slider and number input bidirectionally
     syncSliderAndInput(slider, numInput) {
-        slider.addEventListener('input', () => {
+        this._addHandler(slider, 'input', () => {
             numInput.value = slider.value;
             this.scheduleAutoSave();
         });
-        numInput.addEventListener('input', () => {
+        this._addHandler(numInput, 'input', () => {
             slider.value = numInput.value;
             this.scheduleAutoSave();
         });
@@ -560,5 +570,11 @@ export class TuningPage {
     destroy() {
         if (this.saveTimer) clearTimeout(this.saveTimer);
         if (this.toastTimer) clearTimeout(this.toastTimer);
+
+        // Remove all tracked event listeners
+        for (const { element, event, handler } of this._handlers) {
+            element.removeEventListener(event, handler);
+        }
+        this._handlers = [];
     }
 }
