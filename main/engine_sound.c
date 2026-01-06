@@ -111,6 +111,9 @@ static bool engine_task_running = false;
 static TaskHandle_t engine_task_handle = NULL;
 static SemaphoreHandle_t engine_mutex = NULL;
 
+// Deferred NVS write flag - avoids blocking audio hot path
+static volatile bool nvs_save_pending = false;
+
 // RPM tracking
 static volatile uint16_t current_rpm = IDLE_RPM;
 static volatile uint16_t target_rpm = IDLE_RPM;
@@ -738,6 +741,17 @@ static esp_err_t play_start_sound(void) {
 }
 
 /**
+ * @brief Process any pending NVS save operation
+ * Called from non-critical path (engine idle) to avoid blocking audio
+ */
+static void process_pending_nvs_save(void) {
+    if (nvs_save_pending) {
+        nvs_save_pending = false;
+        nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    }
+}
+
+/**
  * @brief Engine sound task
  */
 static void engine_sound_task(void *arg) {
@@ -924,7 +938,8 @@ static void engine_sound_task(void *arg) {
                     vTaskDelay(pdMS_TO_TICKS(5));
                 }
             } else {
-                // No horn, just wait
+                // No horn, just wait - process any deferred NVS saves
+                process_pending_nvs_save();
                 vTaskDelay(pdMS_TO_TICKS(50));
             }
         }
@@ -1663,8 +1678,8 @@ uint8_t engine_sound_toggle_volume_level(void) {
         mode_switch_sample_pos = 0;
     }
 
-    // Save the new setting to NVS
-    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    // Defer NVS save to avoid blocking audio hot path
+    nvs_save_pending = true;
 
     return config.active_volume_level;
 }
@@ -1687,8 +1702,8 @@ void engine_sound_set_volume_preset(uint8_t index) {
     // Set both volume levels to the preset value
     config.master_volume_level1 = volume;
     config.master_volume_level2 = volume;
-    // Save to NVS
-    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    // Defer NVS save to avoid blocking audio hot path
+    nvs_save_pending = true;
     ESP_LOGI(TAG, "Volume set to preset %d (%d%%)", index, volume);
 }
 
