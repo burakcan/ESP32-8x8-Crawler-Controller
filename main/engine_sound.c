@@ -208,6 +208,7 @@ static inline uint8_t get_master_volume(void)
  * @brief Get sample from idle sound with interpolation
  */
 static inline int16_t get_idle_sample(uint32_t pos_fixed) {
+    if (!current_profile) return 0;
     uint32_t idx = pos_fixed >> 16;
     if (idx >= current_profile->idle.sample_count) {
         idle_sample_pos = 0;
@@ -221,6 +222,7 @@ static inline int16_t get_idle_sample(uint32_t pos_fixed) {
  * @brief Get sample from rev sound with interpolation
  */
 static inline int16_t get_rev_sample(uint32_t pos_fixed) {
+    if (!current_profile) return 0;
     uint32_t idx = pos_fixed >> 16;
     if (idx >= current_profile->rev.sample_count) {
         rev_sample_pos = 0;
@@ -233,6 +235,7 @@ static inline int16_t get_rev_sample(uint32_t pos_fixed) {
  * @brief Get sample from knock sound
  */
 static inline int16_t get_knock_sample(uint32_t pos_fixed) {
+    if (!current_profile) return 0;
     uint32_t idx = pos_fixed >> 16;
     if (idx >= current_profile->knock.sample_count) {
         return 0;  // Knock is one-shot
@@ -244,7 +247,7 @@ static inline int16_t get_knock_sample(uint32_t pos_fixed) {
  * @brief Get sample from jake brake sound
  */
 static inline int16_t get_jake_sample(uint32_t pos_fixed) {
-    if (!current_profile->has_jake_brake) {
+    if (!current_profile || !current_profile->has_jake_brake) {
         return 0;
     }
     uint32_t idx = pos_fixed >> 16;
@@ -259,6 +262,7 @@ static inline int16_t get_jake_sample(uint32_t pos_fixed) {
  * @brief Get sample from start sound
  */
 static inline int16_t get_start_sample(uint32_t pos_fixed) {
+    if (!current_profile) return -1;
     uint32_t idx = pos_fixed >> 16;
     if (idx >= current_profile->start.sample_count) {
         return -1;  // Signal end of start sound
@@ -388,6 +392,11 @@ static void update_rpm(void) {
  * - Volume is throttle-dependent (louder at higher throttle)
  */
 static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
+    // Safety check - output silence if no profile loaded
+    if (!current_profile) {
+        memset(buffer, 0, num_samples * sizeof(int16_t) * 2);
+        return;
+    }
     uint32_t increment = calc_sample_increment(current_rpm);
 
     // Get crossfade proportions (like reference: a1Multi and 100-a1Multi)
@@ -691,6 +700,10 @@ static void mix_shutdown_samples(int16_t *buffer, size_t num_samples) {
  * with long start sounds (the start sound plays at normal speed anyway).
  */
 static esp_err_t play_start_sound(void) {
+    if (!current_profile) {
+        ESP_LOGW(TAG, "No sound profile loaded, skipping start sound");
+        return ESP_ERR_INVALID_STATE;
+    }
     ESP_LOGI(TAG, "Playing engine start sound (%lu samples)", current_profile->start.sample_count);
 
     int16_t *buffer = heap_caps_malloc(ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2, MALLOC_CAP_DMA);
