@@ -159,7 +159,7 @@ int metrics_to_json(char *buf, size_t buf_len) {
         (unsigned long)snap.loop_time_avg, (unsigned long)snap.loop_time_max,
         (unsigned long)snap.loop_jitter,
         (unsigned long)snap.audio_underruns,
-        (unsigned long)snap.ws_frame_latency_avg, (unsigned long)snap.ws_latency_max,
+        (unsigned long)snap.ws_frame_latency_avg, (unsigned long)snap.ws_frame_latency_max,
         (unsigned long)snap.stack_main, (unsigned long)snap.stack_audio,
         (unsigned long)snap.mutex_wait_max,
         (long long)snap.timestamp_ms);
