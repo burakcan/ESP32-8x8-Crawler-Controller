@@ -39,6 +39,17 @@ static steering_mode_t current_mode = STEER_MODE_FRONT;
 static steering_mode_t last_normal_mode = STEER_MODE_FRONT;  // FWS or AWS only
 static bool mode_changed = false;
 
+// Long-press callback support
+static mode_switch_longpress_cb_t longpress_callback = NULL;
+static uint32_t longpress_threshold_ms = 1500;
+static bool longpress_handled = false;
+
+// Steering enable flag (for menu mode)
+static bool steering_enabled = true;
+
+// Last known button state
+static bool last_button_state = false;
+
 /**
  * @brief Check if current mode is a "special" mode (Crab or Rear)
  */
@@ -103,7 +114,7 @@ static void execute_mode_change(int presses)
         if (engine_sound_get_state() == ENGINE_RUNNING) {
             engine_sound_play_mode_switch();
         } else {
-            sound_play(SOUND_MODE_CHANGE);
+            sound_play_mode_beep(new_mode);
         }
     }
 }
@@ -123,6 +134,9 @@ void mode_switch_update(bool button_pressed)
 {
     int64_t now_ms = esp_timer_get_time() / 1000;
 
+    // Track button state for external queries
+    last_button_state = button_pressed;
+
     switch (btn_state) {
         case BTN_STATE_IDLE:
             if (button_pressed) {
@@ -130,11 +144,27 @@ void mode_switch_update(bool button_pressed)
                 btn_state = BTN_STATE_PRESSED;
                 last_press_time = now_ms;
                 press_count = 1;
+                longpress_handled = false;  // Reset long-press flag
             }
             break;
 
         case BTN_STATE_PRESSED:
-            if (!button_pressed) {
+            if (button_pressed) {
+                // Still held - check for long press
+                if (!longpress_handled &&
+                    longpress_callback != NULL &&
+                    (now_ms - last_press_time) >= longpress_threshold_ms) {
+                    // Long press detected!
+                    longpress_handled = true;
+                    ESP_LOGI(TAG, "Long press detected (%lu ms), firing callback",
+                             (unsigned long)(now_ms - last_press_time));
+                    // Fire callback
+                    longpress_callback();
+                    // Reset state machine - don't execute multi-click action
+                    press_count = 0;
+                    btn_state = BTN_STATE_IDLE;
+                }
+            } else {
                 // Button just released (with debounce)
                 if ((now_ms - last_press_time) >= DEBOUNCE_MS) {
                     btn_state = BTN_STATE_WAIT_COMMIT;
@@ -150,20 +180,26 @@ void mode_switch_update(bool button_pressed)
                     press_count++;
                     btn_state = BTN_STATE_PRESSED;
                     last_press_time = now_ms;
+                    longpress_handled = false;  // Reset for new press
                 } else {
                     // Too late, this is a new sequence
-                    // First commit the previous action
-                    execute_mode_change(press_count);
+                    // First commit the previous action (if enabled)
+                    if (steering_enabled) {
+                        execute_mode_change(press_count);
+                    }
                     // Then start new sequence
                     press_count = 1;
                     btn_state = BTN_STATE_PRESSED;
                     last_press_time = now_ms;
+                    longpress_handled = false;
                 }
             } else {
                 // Still released, check for timeout
                 if ((now_ms - last_release_time) >= PRESS_TIMEOUT) {
-                    // Timeout reached, commit the action
-                    execute_mode_change(press_count);
+                    // Timeout reached, commit the action (if enabled)
+                    if (steering_enabled) {
+                        execute_mode_change(press_count);
+                    }
                     press_count = 0;
                     btn_state = BTN_STATE_IDLE;
                 }
@@ -205,4 +241,37 @@ bool mode_switch_mode_changed(void)
     bool changed = mode_changed;
     mode_changed = false;
     return changed;
+}
+
+void mode_switch_set_longpress_callback(mode_switch_longpress_cb_t cb, uint32_t threshold_ms)
+{
+    longpress_callback = cb;
+    longpress_threshold_ms = threshold_ms;
+    ESP_LOGI(TAG, "Long-press callback %s (threshold: %lu ms)",
+             cb ? "registered" : "cleared", (unsigned long)threshold_ms);
+}
+
+void mode_switch_set_enabled(bool enabled)
+{
+    if (steering_enabled != enabled) {
+        steering_enabled = enabled;
+        ESP_LOGI(TAG, "Steering mode changes %s", enabled ? "enabled" : "disabled");
+
+        if (!enabled) {
+            // Reset state machine when disabling
+            btn_state = BTN_STATE_IDLE;
+            press_count = 0;
+            longpress_handled = false;
+        }
+    }
+}
+
+bool mode_switch_is_enabled(void)
+{
+    return steering_enabled;
+}
+
+bool mode_switch_get_button_pressed(void)
+{
+    return last_button_state;
 }

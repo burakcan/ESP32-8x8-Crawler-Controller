@@ -1645,6 +1645,98 @@ input[type="file"]::file-selector-button {
     color: var(--accent-cyan);
 }
 
+/* Volume preset section */
+.volume-presets-section {
+    padding: 8px 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.volume-presets-section > .label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-bottom: 10px;
+}
+
+.presets-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.preset-item {
+    flex: 1;
+    min-width: 90px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.preset-item.active {
+    border-color: var(--accent-green);
+    background: rgba(0, 255, 136, 0.1);
+}
+
+.preset-apply-btn {
+    padding: 4px 8px;
+    background: var(--border-color);
+    border: none;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.8em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.preset-apply-btn:hover {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.preset-item.active .preset-apply-btn {
+    background: var(--accent-green);
+    color: #000;
+}
+
+.preset-input {
+    width: 55px;
+    padding: 4px 6px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 0.85em;
+    text-align: center;
+}
+
+.preset-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+/* Hide number input spinners */
+.preset-input::-webkit-outer-spin-button,
+.preset-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.preset-input[type=number] {
+    -moz-appearance: textfield;
+}
+
+.preset-unit {
+    color: var(--text-secondary);
+    font-size: 0.8em;
+}
+
 /* Collapsible section */
 .card.collapsible h2 {
     cursor: pointer;

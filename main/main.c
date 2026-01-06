@@ -28,6 +28,7 @@
 #include "sound.h"
 #include "engine_sound.h"
 #include "mode_switch.h"
+#include "menu.h"
 
 static const char *TAG = "MAIN";
 
@@ -87,146 +88,65 @@ static void process_control_loop(void)
 
     bool signal_lost = throttle_data.signal_lost || steering_data.signal_lost;
 
-    // AUX1 (Channel 3) - Horn control
-    // Horn sounds while button is held
-    bool horn_pressed = (aux1_data.value > 400);
-    engine_sound_set_horn(horn_pressed);
+    // Get button states
+    bool aux1_pressed = (aux1_data.value > 400);  // Horn / Menu confirm
+    bool aux2_pressed = (aux2_data.value > 400);  // Mode switch / Menu navigate
 
-    // AUX3 momentary button handling (ignition/wifi/volume button):
-    // - Single short press: Toggle engine ignition
-    // - Double press: Toggle between volume level 1 and 2
-    // - Long press (>=5s): Toggle WiFi
-    //
-    // State machine similar to mode_switch.c but with single/double detection
-    typedef enum {
-        AUX3_IDLE,          // Waiting for press
-        AUX3_PRESSED,       // Button held down
-        AUX3_WAIT_COMMIT    // Released, waiting for double-click or timeout
-    } aux3_state_t;
+    // Update menu state machine (handles AUX2 when menu is active)
+    menu_update(aux2_pressed);
 
-    static aux3_state_t aux3_state = AUX3_IDLE;
-    static int64_t aux3_press_time = 0;
-    static int64_t aux3_release_time = 0;
-    static int aux3_press_count = 0;
-    static bool aux3_long_press_handled = false;
-
-    #define AUX3_DEBOUNCE_MS        50      // Minimum time between state changes
-    #define AUX3_DOUBLE_CLICK_MS    400     // Max time between presses for double-click
-    #define AUX3_COMMIT_TIMEOUT_MS  350     // Time after release to commit single press
-    #define AUX3_LONG_PRESS_MS      5000    // Long press threshold for WiFi toggle
-
-    bool aux3_pressed = (aux3_data.value > 400);  // Button is currently pressed
-    int64_t now_ms = esp_timer_get_time() / 1000;
-
-    switch (aux3_state) {
-        case AUX3_IDLE:
-            if (aux3_pressed) {
-                // Button just pressed
-                aux3_state = AUX3_PRESSED;
-                aux3_press_time = now_ms;
-                aux3_press_count = 1;
-                aux3_long_press_handled = false;
-            }
-            break;
-
-        case AUX3_PRESSED:
-            if (!aux3_pressed && (now_ms - aux3_press_time) >= AUX3_DEBOUNCE_MS) {
-                // Button released (with debounce)
-                aux3_state = AUX3_WAIT_COMMIT;
-                aux3_release_time = now_ms;
-            } else if (aux3_pressed && !aux3_long_press_handled &&
-                       (now_ms - aux3_press_time) >= AUX3_LONG_PRESS_MS) {
-                // Long press detected - toggle WiFi
-                aux3_long_press_handled = true;
-                bool wifi_currently_on = web_server_wifi_is_enabled();
-
-                if (!wifi_currently_on) {
-                    sound_play(SOUND_WIFI_ON);
-                    web_server_wifi_enable();
-                    udp_log_init();
-                    ota_update_init();
-                } else {
-                    sound_play(SOUND_WIFI_OFF);
-                    web_server_wifi_disable();
-                }
-
-                // Set LED notification for 2 seconds
-                wifi_switch_notify_until = (uint32_t)now_ms + 2000;
-                wifi_switch_notify_on = !wifi_currently_on;
-            }
-            break;
-
-        case AUX3_WAIT_COMMIT:
-            if (aux3_pressed) {
-                // Another press - check if within double-click window
-                if ((now_ms - aux3_release_time) <= AUX3_DOUBLE_CLICK_MS) {
-                    aux3_press_count++;
-                    aux3_state = AUX3_PRESSED;
-                    aux3_press_time = now_ms;
-                    aux3_long_press_handled = false;  // Reset for new press
-                } else {
-                    // Too late, commit previous action and start new sequence
-                    if (aux3_press_count == 1 && !aux3_long_press_handled) {
-                        // Single press - toggle engine
-                        if (engine_sound_get_state() == ENGINE_OFF) {
-                            engine_sound_start();
-                        } else {
-                            engine_sound_stop();
-                        }
-                    }
-                    // Start new sequence
-                    aux3_press_count = 1;
-                    aux3_state = AUX3_PRESSED;
-                    aux3_press_time = now_ms;
-                    aux3_long_press_handled = false;
-                }
-            } else if ((now_ms - aux3_release_time) >= AUX3_COMMIT_TIMEOUT_MS) {
-                // Timeout - commit the action based on press count
-                if (!aux3_long_press_handled) {
-                    if (aux3_press_count == 1) {
-                        // Single press - toggle engine ignition
-                        if (engine_sound_get_state() == ENGINE_OFF) {
-                            engine_sound_start();
-                        } else {
-                            engine_sound_stop();
-                        }
-                    } else if (aux3_press_count >= 2) {
-                        // Double press - toggle volume level
-                        uint8_t new_level = engine_sound_toggle_volume_level();
-                        ESP_LOGI(TAG, "Volume level switched to %d", new_level + 1);
-                    }
-                }
-                aux3_press_count = 0;
-                aux3_state = AUX3_IDLE;
-            }
-            break;
+    // AUX1 - Horn or Menu Confirm
+    // When menu is active, AUX1 is used for menu confirmation
+    // When menu is inactive, AUX1 is the horn button
+    if (menu_is_active()) {
+        menu_handle_confirm(aux1_pressed);
+        engine_sound_set_horn(false);  // No horn while in menu
+    } else {
+        engine_sound_set_horn(aux1_pressed);
     }
 
-    // AUX4 controls throttle mode (3-position switch)
-    // Values: -836 (low), 0 (center), 836 (high) - range roughly -1000 to +1000
+    // AUX3 - Throttle Mode (3-position switch)
+    // SWAPPED: Was AUX4, now AUX3
     // Low (<-400): Direct pass-through
     // Center (-400 to 400): Neutral - rev engine but no ESC output
     // High (>400): Realistic throttle physics
     static throttle_mode_t prev_throttle_mode = THROTTLE_MODE_DIRECT;
     throttle_mode_t throttle_mode;
-    if (aux4_data.value > 400) {
+    if (aux3_data.value > 400) {
         throttle_mode = THROTTLE_MODE_REALISTIC;
-    } else if (aux4_data.value > -400) {
+    } else if (aux3_data.value > -400) {
         throttle_mode = THROTTLE_MODE_NEUTRAL;
     } else {
         throttle_mode = THROTTLE_MODE_DIRECT;
     }
     if (throttle_mode != prev_throttle_mode) {
-        ESP_LOGI(TAG, "Throttle mode: %d (aux4=%d)", throttle_mode, aux4_data.value);
+        ESP_LOGI(TAG, "Throttle mode: %d (aux3=%d)", throttle_mode, aux3_data.value);
         prev_throttle_mode = throttle_mode;
     }
     tuning_set_throttle_mode(throttle_mode);
+
+    // AUX4 - Engine On/Off (momentary button)
+    // SWAPPED: Was AUX3 (complex state machine), now simple single-press toggle
+    static bool aux4_was_pressed = false;
+    bool aux4_pressed = (aux4_data.value > 400);
+    if (aux4_pressed && !aux4_was_pressed) {
+        // Rising edge - toggle engine
+        if (engine_sound_get_state() == ENGINE_OFF) {
+            ESP_LOGI(TAG, "Engine start (AUX4)");
+            engine_sound_start();
+        } else {
+            ESP_LOGI(TAG, "Engine stop (AUX4)");
+            engine_sound_stop();
+        }
+    }
+    aux4_was_pressed = aux4_pressed;
 
     // Check for signal loss
     if (signal_lost) {
         if (app_state != APP_STATE_FAILSAFE) {
             ESP_LOGW(TAG, "Signal lost! Entering failsafe mode");
             app_state = APP_STATE_FAILSAFE;
+            menu_force_exit();  // Exit menu on signal loss
             esc_set_neutral();
             servo_center_all();
             tuning_reset_realistic_throttle();  // Reset simulated velocity
@@ -452,7 +372,11 @@ void app_main(void)
     ESP_LOGI(TAG, "Initializing mode switch...");
     mode_switch_init();
 
-    // Initialize web server (WiFi OFF by default - hold AUX3 5sec to enable)
+    // Initialize menu system (registers long-press callback with mode_switch)
+    ESP_LOGI(TAG, "Initializing menu system...");
+    menu_init();
+
+    // Initialize web server (WiFi OFF by default - use menu to enable)
     ESP_LOGI(TAG, "Initializing web server (WiFi OFF)...");
     ESP_ERROR_CHECK(web_server_init_no_wifi());
 
@@ -464,17 +388,14 @@ void app_main(void)
 
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║  Mode Switch (CH3 momentary button):     ║");
-    ESP_LOGI(TAG, "║    1x press = Toggle Front/All-Axle      ║");
-    ESP_LOGI(TAG, "║    2x press = Crab mode                  ║");
-    ESP_LOGI(TAG, "║    3x press = Rear mode                  ║");
-    ESP_LOGI(TAG, "║  (In Crab/Rear: 1x returns to last mode) ║");
+    ESP_LOGI(TAG, "║  AUX1: Horn (hold) / Menu confirm        ║");
+    ESP_LOGI(TAG, "║  AUX2: Steering mode (1x/2x/3x press)    ║");
+    ESP_LOGI(TAG, "║        Hold 1.5s = Enter settings menu   ║");
+    ESP_LOGI(TAG, "║  AUX3: Throttle mode (3-pos switch)      ║");
+    ESP_LOGI(TAG, "║  AUX4: Engine on/off (press)             ║");
     ESP_LOGI(TAG, "╠══════════════════════════════════════════╣");
-    ESP_LOGI(TAG, "║  AUX3 Button Controls:                   ║");
-    ESP_LOGI(TAG, "║    1x press = Engine ignition            ║");
-    ESP_LOGI(TAG, "║    2x press = Toggle volume level        ║");
-    ESP_LOGI(TAG, "║    Hold 5s  = WiFi toggle                ║");
-    ESP_LOGI(TAG, "║  WiFi:   %s / %s         ║", WIFI_AP_SSID, WIFI_AP_PASS);
+    ESP_LOGI(TAG, "║  Menu: Volume / Profile / WiFi           ║");
+    ESP_LOGI(TAG, "║  WiFi: %s / %s           ║", WIFI_AP_SSID, WIFI_AP_PASS);
     ESP_LOGI(TAG, "║  (WiFi auto-enables if no RC for 5 sec)  ║");
     ESP_LOGI(TAG, "╚══════════════════════════════════════════╝");
     ESP_LOGI(TAG, "");

@@ -41,16 +41,26 @@ export class SoundPage {
                 <div class="card">
                     <h2>Volume Settings</h2>
                     <div class="volume-container">
-                        <p class="help-text">Double-click ignition button to toggle between levels</p>
-                        <div class="slider-row">
-                            <span class="label">Volume Level 1 <span id="level1-active" class="active-badge">●</span></span>
-                            <input type="range" id="volume-level1" min="0" max="200" value="100"/>
-                            <span class="value" id="volume-level1-val">100%</span>
-                        </div>
-                        <div class="slider-row">
-                            <span class="label">Volume Level 2 <span id="level2-active" class="active-badge hidden">●</span></span>
-                            <input type="range" id="volume-level2" min="0" max="200" value="50"/>
-                            <span class="value" id="volume-level2-val">50%</span>
+                        <div class="volume-presets-section">
+                            <span class="label">Menu Volume Presets</span>
+                            <div class="presets-grid">
+                                <div class="preset-item" id="preset-low-item">
+                                    <button id="vol-low-btn" class="preset-apply-btn">Low</button>
+                                    <input type="number" id="vol-low" min="0" max="200" value="20" class="preset-input"/>
+                                    <span class="preset-unit">%</span>
+                                </div>
+                                <div class="preset-item" id="preset-medium-item">
+                                    <button id="vol-medium-btn" class="preset-apply-btn">Medium</button>
+                                    <input type="number" id="vol-medium" min="0" max="200" value="100" class="preset-input"/>
+                                    <span class="preset-unit">%</span>
+                                </div>
+                                <div class="preset-item" id="preset-high-item">
+                                    <button id="vol-high-btn" class="preset-apply-btn">High</button>
+                                    <input type="number" id="vol-high" min="0" max="200" value="170" class="preset-input"/>
+                                    <span class="preset-unit">%</span>
+                                </div>
+                            </div>
+                            <div class="hint">Click preset name to apply. Edit values to customize.</div>
                         </div>
                         <div class="slider-row">
                             <span class="label">Idle Volume</span>
@@ -174,6 +184,10 @@ export class SoundPage {
                                 <option value="0">Truck Horn</option>
                                 <option value="1">MAN TGE Horn</option>
                                 <option value="2">La Cucaracha</option>
+                                <option value="3">Two-Tone</option>
+                                <option value="4">Dixie</option>
+                                <option value="5">Peterbilt</option>
+                                <option value="6">Outlaw</option>
                             </select>
                         </div>
                         <div class="effect-row">
@@ -235,13 +249,17 @@ export class SoundPage {
             profileDesc: document.getElementById('profile-desc'),
             enabled: document.getElementById('sound-enabled'),
             currentRpm: document.getElementById('current-rpm'),
-            // Volumes
-            volumeLevel1: document.getElementById('volume-level1'),
-            volumeLevel1Val: document.getElementById('volume-level1-val'),
-            volumeLevel2: document.getElementById('volume-level2'),
-            volumeLevel2Val: document.getElementById('volume-level2-val'),
-            level1Active: document.getElementById('level1-active'),
-            level2Active: document.getElementById('level2-active'),
+            // Volume Presets
+            volLow: document.getElementById('vol-low'),
+            volLowBtn: document.getElementById('vol-low-btn'),
+            presetLowItem: document.getElementById('preset-low-item'),
+            volMedium: document.getElementById('vol-medium'),
+            volMediumBtn: document.getElementById('vol-medium-btn'),
+            presetMediumItem: document.getElementById('preset-medium-item'),
+            volHigh: document.getElementById('vol-high'),
+            volHighBtn: document.getElementById('vol-high-btn'),
+            presetHighItem: document.getElementById('preset-high-item'),
+            // Component Volumes
             idleVolume: document.getElementById('idle-volume'),
             idleVolumeVal: document.getElementById('idle-volume-val'),
             revVolume: document.getElementById('rev-volume'),
@@ -297,8 +315,6 @@ export class SoundPage {
         };
 
         // Setup slider value displays
-        this.setupSlider('volumeLevel1', '%');
-        this.setupSlider('volumeLevel2', '%');
         this.setupSlider('idleVolume', '%');
         this.setupSlider('revVolume', '%');
         this.setupSlider('knockVolume', '%');
@@ -319,6 +335,14 @@ export class SoundPage {
         this.setupSlider('idleEnd', '');
         this.setupSlider('knockStart', '');
         this.setupSlider('knockInterval', '');
+
+        // Volume preset state
+        this.currentPreset = 1;  // 0=Low, 1=Medium, 2=High
+
+        // Preset apply buttons - click to apply that preset
+        this.elements.volLowBtn.addEventListener('click', () => this.applyPreset(0));
+        this.elements.volMediumBtn.addEventListener('click', () => this.applyPreset(1));
+        this.elements.volHighBtn.addEventListener('click', () => this.applyPreset(2));
 
         // Profile change handler
         this.elements.profile.addEventListener('change', () => this.onProfileChange());
@@ -342,6 +366,41 @@ export class SoundPage {
                 valEl.textContent = slider.value + suffix;
             });
         }
+    }
+
+    applyPreset(index) {
+        // Apply the selected preset - sets master volume to that preset value
+        this.currentPreset = index;
+        this.updatePresetUI();
+
+        // Get the preset value and apply it
+        const presetValue = parseInt(this.getPresetValue(index));
+
+        // Send to device immediately (applies volume)
+        fetch('/api/sound', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                masterVolumeLevel1: presetValue,
+                masterVolumeLevel2: presetValue
+            })
+        }).catch(err => console.error('Failed to apply preset:', err));
+    }
+
+    getPresetValue(index) {
+        switch (index) {
+            case 0: return this.elements.volLow.value;
+            case 1: return this.elements.volMedium.value;
+            case 2: return this.elements.volHigh.value;
+            default: return this.elements.volMedium.value;
+        }
+    }
+
+    updatePresetUI() {
+        // Update active state on preset items
+        this.elements.presetLowItem.classList.toggle('active', this.currentPreset === 0);
+        this.elements.presetMediumItem.classList.toggle('active', this.currentPreset === 1);
+        this.elements.presetHighItem.classList.toggle('active', this.currentPreset === 2);
     }
 
     toggleAdvanced() {
@@ -419,19 +478,13 @@ export class SoundPage {
         el.enabled.checked = cfg.enabled;
         el.currentRpm.textContent = cfg.rpm;
 
-        // Volumes
-        el.volumeLevel1.value = cfg.masterVolumeLevel1;
-        el.volumeLevel1Val.textContent = cfg.masterVolumeLevel1 + '%';
-        el.volumeLevel2.value = cfg.masterVolumeLevel2;
-        el.volumeLevel2Val.textContent = cfg.masterVolumeLevel2 + '%';
-        // Show active level indicator
-        if (cfg.activeVolumeLevel === 0) {
-            el.level1Active.classList.remove('hidden');
-            el.level2Active.classList.add('hidden');
-        } else {
-            el.level1Active.classList.add('hidden');
-            el.level2Active.classList.remove('hidden');
-        }
+        // Volume Presets - load values and current preset
+        el.volLow.value = cfg.volumePresetLow || 20;
+        el.volMedium.value = cfg.volumePresetMedium || 100;
+        el.volHigh.value = cfg.volumePresetHigh || 170;
+        this.currentPreset = cfg.currentVolumePreset || 1;
+        this.updatePresetUI();
+
         el.idleVolume.value = cfg.idleVolume;
         el.idleVolumeVal.textContent = cfg.idleVolume + '%';
         el.revVolume.value = cfg.revVolume;
@@ -496,8 +549,9 @@ export class SoundPage {
         const config = {
             profile: parseInt(el.profile.value),
             enabled: el.enabled.checked,
-            masterVolumeLevel1: parseInt(el.volumeLevel1.value),
-            masterVolumeLevel2: parseInt(el.volumeLevel2.value),
+            volumePresetLow: parseInt(el.volLow.value),
+            volumePresetMedium: parseInt(el.volMedium.value),
+            volumePresetHigh: parseInt(el.volHigh.value),
             idleVolume: parseInt(el.idleVolume.value),
             revVolume: parseInt(el.revVolume.value),
             knockVolume: parseInt(el.knockVolume.value),

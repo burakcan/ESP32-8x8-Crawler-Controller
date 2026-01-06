@@ -29,8 +29,9 @@ idf_component_register(
         "sound.c"
         "engine_sound.c"
         "mode_switch.c"
+        "menu.c"
         "sounds/sound_profiles.c"
-    INCLUDE_DIRS "." "sounds" "sounds/cat3408" "sounds/unimog" "sounds/mantgx" "sounds/effects"
+    INCLUDE_DIRS "." "sounds" "sounds/cat3408" "sounds/unimog" "sounds/mantgx" "sounds/effects" "sounds/menu"
     REQUIRES
         driver
         esp_driver_mcpwm

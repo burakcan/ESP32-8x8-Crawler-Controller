@@ -21,6 +21,7 @@
 #include "tuning.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,6 +42,10 @@
 #include "sounds/effects/truck_horn.h"
 #include "sounds/effects/mantge_horn.h"
 #include "sounds/effects/la_cucaracha.h"
+#include "sounds/effects/horn_2tone.h"
+#include "sounds/effects/horn_dixie.h"
+#include "sounds/effects/horn_peterbilt.h"
+#include "sounds/effects/horn_outlaw.h"
 #include "sounds/mode_switch_sound.h"
 
 static const char *TAG = "ENGINE_SND";
@@ -65,6 +70,9 @@ static engine_sound_config_t config = {
     .master_volume_level1 = 100,    // Normal volume
     .master_volume_level2 = 50,     // Quiet mode (half volume)
     .active_volume_level = 0,       // Start on level 1
+    .volume_preset_low = 20,        // Menu preset: Low
+    .volume_preset_medium = 100,    // Menu preset: Medium
+    .volume_preset_high = 170,      // Menu preset: High
     .idle_volume = 100,
     .rev_volume = 80,         // Rev slightly quieter since it's layered on top
     .knock_volume = 80,       // Reduced - knock is subtle diesel "tick"
@@ -577,6 +585,30 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
                     horn_loop_begin = cucarachaLoopBegin;
                     horn_loop_end = cucarachaLoopEnd;
                     break;
+                case HORN_TYPE_2TONE:
+                    horn_samples = horn2ToneSamples;
+                    horn_count = horn2ToneSampleCount;
+                    horn_loop_begin = horn2ToneLoopBegin;
+                    horn_loop_end = horn2ToneLoopEnd;
+                    break;
+                case HORN_TYPE_DIXIE:
+                    horn_samples = hornDixieSamples;
+                    horn_count = hornDixieSampleCount;
+                    horn_loop_begin = hornDixieLoopBegin;
+                    horn_loop_end = hornDixieLoopEnd;
+                    break;
+                case HORN_TYPE_PETERBILT:
+                    horn_samples = hornPeterbiltSamples;
+                    horn_count = hornPeterbiltSampleCount;
+                    horn_loop_begin = hornPeterbiltLoopBegin;
+                    horn_loop_end = hornPeterbiltLoopEnd;
+                    break;
+                case HORN_TYPE_OUTLAW:
+                    horn_samples = hornOutlawSamples;
+                    horn_count = hornOutlawSampleCount;
+                    horn_loop_begin = hornOutlawLoopBegin;
+                    horn_loop_end = hornOutlawLoopEnd;
+                    break;
                 default:  // HORN_TYPE_TRUCK
                     horn_samples = truckHornSamples;
                     horn_count = truckHornSampleCount;
@@ -809,8 +841,92 @@ static void engine_sound_task(void *arg) {
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
         } else {
-            // Engine not running, just wait
-            vTaskDelay(pdMS_TO_TICKS(50));
+            // Engine not running
+            // But still allow horn to play!
+            if (horn_active && config.horn_enabled) {
+                // Mix horn-only audio
+                const signed char *horn_samples;
+                uint32_t horn_count, horn_loop_begin, horn_loop_end;
+
+                // Select horn type
+                switch (config.horn_type) {
+                    case HORN_TYPE_MANTGE:
+                        horn_samples = mantgeHornSamples;
+                        horn_count = mantgeHornSampleCount;
+                        horn_loop_begin = mantgeHornLoopBegin;
+                        horn_loop_end = mantgeHornLoopEnd;
+                        break;
+                    case HORN_TYPE_CUCARACHA:
+                        horn_samples = cucarachaSamples;
+                        horn_count = cucarachaSampleCount;
+                        horn_loop_begin = cucarachaLoopBegin;
+                        horn_loop_end = cucarachaLoopEnd;
+                        break;
+                    case HORN_TYPE_2TONE:
+                        horn_samples = horn2ToneSamples;
+                        horn_count = horn2ToneSampleCount;
+                        horn_loop_begin = horn2ToneLoopBegin;
+                        horn_loop_end = horn2ToneLoopEnd;
+                        break;
+                    case HORN_TYPE_DIXIE:
+                        horn_samples = hornDixieSamples;
+                        horn_count = hornDixieSampleCount;
+                        horn_loop_begin = hornDixieLoopBegin;
+                        horn_loop_end = hornDixieLoopEnd;
+                        break;
+                    case HORN_TYPE_PETERBILT:
+                        horn_samples = hornPeterbiltSamples;
+                        horn_count = hornPeterbiltSampleCount;
+                        horn_loop_begin = hornPeterbiltLoopBegin;
+                        horn_loop_end = hornPeterbiltLoopEnd;
+                        break;
+                    case HORN_TYPE_OUTLAW:
+                        horn_samples = hornOutlawSamples;
+                        horn_count = hornOutlawSampleCount;
+                        horn_loop_begin = hornOutlawLoopBegin;
+                        horn_loop_end = hornOutlawLoopEnd;
+                        break;
+                    default:  // HORN_TYPE_TRUCK
+                        horn_samples = truckHornSamples;
+                        horn_count = truckHornSampleCount;
+                        horn_loop_begin = truckHornLoopBegin;
+                        horn_loop_end = truckHornLoopEnd;
+                        break;
+                }
+
+                // Generate horn samples into buffer
+                int32_t vol = (config.horn_volume * get_master_volume()) / 100;
+                for (size_t i = 0; i < ENGINE_BUFFER_SIZE; i++) {
+                    uint32_t idx = horn_sample_pos >> 16;
+                    int32_t mix = 0;
+                    if (idx < horn_count) {
+                        int16_t sample = ((int16_t)horn_samples[idx]) << 8;
+                        mix = ((int32_t)sample * vol) >> 8;
+                        horn_sample_pos += 0x10000;
+
+                        // Loop within the loop region
+                        uint32_t next_idx = horn_sample_pos >> 16;
+                        if (next_idx >= horn_loop_end) {
+                            horn_sample_pos = horn_loop_begin << 16;
+                        }
+                    }
+                    // Clamp to 16-bit range
+                    if (mix > 32767) mix = 32767;
+                    if (mix < -32768) mix = -32768;
+                    buffer[i * 2] = (int16_t)mix;
+                    buffer[i * 2 + 1] = (int16_t)mix;
+                }
+
+                esp_err_t ret = i2s_channel_write(tx_handle, buffer,
+                                                  ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
+                                                  &bytes_written, pdMS_TO_TICKS(500));
+                if (ret != ESP_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(5));
+                }
+            } else {
+                // No horn, just wait
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
         }
     }
 
@@ -836,6 +952,9 @@ static void sound_config_get_defaults(engine_sound_config_t *cfg)
     cfg->master_volume_level1 = 100;    // Normal volume
     cfg->master_volume_level2 = 50;     // Quiet mode
     cfg->active_volume_level = 0;       // Start on level 1
+    cfg->volume_preset_low = 20;        // Menu preset: Low
+    cfg->volume_preset_medium = 100;    // Menu preset: Medium
+    cfg->volume_preset_high = 170;      // Menu preset: High
     cfg->idle_volume = 100;
     cfg->rev_volume = 80;
     cfg->knock_volume = 80;
@@ -872,6 +991,8 @@ static void sound_config_get_defaults(engine_sound_config_t *cfg)
  *   v1: Original config with single master_volume field
  *   v2: Added dual volume levels (master_volume_level1/2, active_volume_level)
  *       - Struct layout changed: fields after master_volume shifted by 2 bytes
+ *   v3: Added configurable volume presets (volume_preset_low/medium/high)
+ *       - Struct layout changed: new fields added before idle_volume
  */
 static void sound_config_migrate(engine_sound_config_t *old_config, uint32_t old_version)
 {
@@ -900,12 +1021,20 @@ static void sound_config_migrate(engine_sound_config_t *old_config, uint32_t old
         ESP_LOGI(TAG, "v1->v2: old master_volume=%d -> level1=%d, level2=%d",
                  old_master_volume, new_config.master_volume_level1, new_config.master_volume_level2);
     }
-    // Future migrations would go here:
-    // if (old_version >= 2) {
-    //     // v2 fields are compatible, copy them
-    //     new_config.master_volume_level1 = old_config->master_volume_level1;
-    //     ...
-    // }
+
+    if (old_version >= 2) {
+        // v2 → v3 migration:
+        // - Preserve all v2 fields that are still at same offsets
+        // - New volume_preset fields get defaults
+        new_config.master_volume_level1 = old_config->master_volume_level1;
+        new_config.master_volume_level2 = old_config->master_volume_level2;
+        new_config.active_volume_level = old_config->active_volume_level;
+        // Note: All fields after idle_volume have shifted by 3 bytes in v3
+        // Since struct layout changed, we keep defaults for everything else
+        // Volume presets get default values (20, 100, 170)
+
+        ESP_LOGI(TAG, "v2->v3: preserving volume levels, adding preset defaults");
+    }
 
     // Copy migrated config back
     memcpy(old_config, &new_config, sizeof(engine_sound_config_t));
@@ -1542,4 +1671,39 @@ uint8_t engine_sound_toggle_volume_level(void) {
 
 uint8_t engine_sound_get_master_volume(void) {
     return get_master_volume();
+}
+
+uint8_t engine_sound_get_volume_preset(uint8_t index) {
+    switch (index) {
+        case 0: return config.volume_preset_low;
+        case 1: return config.volume_preset_medium;
+        case 2: return config.volume_preset_high;
+        default: return config.volume_preset_medium;
+    }
+}
+
+void engine_sound_set_volume_preset(uint8_t index) {
+    uint8_t volume = engine_sound_get_volume_preset(index);
+    // Set both volume levels to the preset value
+    config.master_volume_level1 = volume;
+    config.master_volume_level2 = volume;
+    // Save to NVS
+    nvs_save_sound_config(&config, sizeof(engine_sound_config_t));
+    ESP_LOGI(TAG, "Volume set to preset %d (%d%%)", index, volume);
+}
+
+uint8_t engine_sound_get_current_volume_preset_index(void) {
+    uint8_t current = get_master_volume();
+    // Find closest matching preset
+    int diff_low = abs((int)current - (int)config.volume_preset_low);
+    int diff_med = abs((int)current - (int)config.volume_preset_medium);
+    int diff_high = abs((int)current - (int)config.volume_preset_high);
+
+    if (diff_low <= diff_med && diff_low <= diff_high) {
+        return 0;  // Low
+    } else if (diff_high <= diff_med) {
+        return 2;  // High
+    } else {
+        return 1;  // Medium
+    }
 }

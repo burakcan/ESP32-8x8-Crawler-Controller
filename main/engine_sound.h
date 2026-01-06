@@ -36,12 +36,16 @@ typedef enum {
     HORN_TYPE_TRUCK = 0,    // Classic truck air horn
     HORN_TYPE_MANTGE,       // MAN TGE truck horn
     HORN_TYPE_CUCARACHA,    // La Cucaracha musical horn
+    HORN_TYPE_2TONE,        // Two-tone truck horn
+    HORN_TYPE_DIXIE,        // Dixie horn (General Lee)
+    HORN_TYPE_PETERBILT,    // Peterbilt truck horn
+    HORN_TYPE_OUTLAW,       // Outlaw train horn
     HORN_TYPE_COUNT
 } horn_type_t;
 
 // Sound config magic number and version for NVS migration
 #define SOUND_CONFIG_MAGIC      0x534E4443  // "SNDC" in hex
-#define SOUND_CONFIG_VERSION    2           // Version 2: Added dual master volume levels
+#define SOUND_CONFIG_VERSION    3           // Version 3: Added configurable volume presets
 
 /**
  * @brief Engine sound configuration
@@ -58,6 +62,12 @@ typedef struct {
     uint8_t master_volume_level1;       // Master volume level 1 (default/normal)
     uint8_t master_volume_level2;       // Master volume level 2 (alternate, e.g. quiet)
     uint8_t active_volume_level;        // Which level is active (0 or 1)
+
+    // Menu volume presets (Low/Medium/High selectable from menu)
+    uint8_t volume_preset_low;          // Low volume preset value (default: 20)
+    uint8_t volume_preset_medium;       // Medium volume preset value (default: 100)
+    uint8_t volume_preset_high;         // High volume preset value (default: 170)
+
     uint8_t idle_volume;                // Idle sound volume
     uint8_t rev_volume;                 // Rev sound volume
     uint8_t knock_volume;               // Diesel knock volume
@@ -239,5 +249,24 @@ uint8_t engine_sound_toggle_volume_level(void);
  * @brief Get the current active master volume (from level 1 or 2)
  */
 uint8_t engine_sound_get_master_volume(void);
+
+/**
+ * @brief Get volume preset value by index
+ * @param index 0=Low, 1=Medium, 2=High
+ * @return Volume preset value (0-200)
+ */
+uint8_t engine_sound_get_volume_preset(uint8_t index);
+
+/**
+ * @brief Set master volume to a preset by index
+ * @param index 0=Low, 1=Medium, 2=High
+ */
+void engine_sound_set_volume_preset(uint8_t index);
+
+/**
+ * @brief Get index of current volume preset (0=Low, 1=Medium, 2=High)
+ * @return Index of closest matching preset, or 1 (Medium) if no match
+ */
+uint8_t engine_sound_get_current_volume_preset_index(void);
 
 #endif // ENGINE_SOUND_H
