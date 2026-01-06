@@ -14,7 +14,16 @@ import { SoundPage } from './sound.js';
 let ws = null;
 let reconnectTimer = null;
 let currentPage = null;
-const RECONNECT_DELAY = 2000;
+let reconnectAttempt = 0;
+const RECONNECT_BASE_DELAY = 2000;
+const RECONNECT_MAX_DELAY = 30000;
+
+// Calculate exponential backoff with jitter
+function getReconnectDelay() {
+    const delay = Math.min(RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempt), RECONNECT_MAX_DELAY);
+    const jitter = delay * 0.2 * Math.random();  // Add up to 20% random jitter
+    return Math.floor(delay + jitter);
+}
 
 // Shared state accessible by all pages
 export const state = {
@@ -47,6 +56,7 @@ function connect() {
 
     ws.onopen = () => {
         state.connected = true;
+        reconnectAttempt = 0;  // Reset backoff on successful connection
         updateConnectionStatus(true);
         console.log('WebSocket connected');
     };
@@ -54,8 +64,10 @@ function connect() {
     ws.onclose = () => {
         state.connected = false;
         updateConnectionStatus(false);
-        console.log('WebSocket disconnected, reconnecting...');
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY);
+        const delay = getReconnectDelay();
+        reconnectAttempt++;
+        console.log('WebSocket disconnected, reconnecting in ' + delay + 'ms...');
+        reconnectTimer = setTimeout(connect, delay);
     };
 
     ws.onerror = (err) => {
