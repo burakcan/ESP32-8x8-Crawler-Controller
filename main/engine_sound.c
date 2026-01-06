@@ -19,6 +19,7 @@
 #include "sound.h"
 #include "nvs_storage.h"
 #include "tuning.h"
+#include "perf_metrics.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -844,6 +845,8 @@ static void engine_sound_task(void *arg) {
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
                                               &bytes_written, pdMS_TO_TICKS(25));
             if (ret != ESP_OK) {
+                // Record audio underrun for metrics
+                perf_metrics_record_underrun();
                 // Only log occasionally to avoid flooding
                 static uint32_t error_count = 0;
                 if (++error_count % 100 == 1) {
@@ -881,6 +884,7 @@ static void engine_sound_task(void *arg) {
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
                                               &bytes_written, pdMS_TO_TICKS(25));
             if (ret != ESP_OK) {
+                perf_metrics_record_underrun();
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
         } else {
@@ -965,6 +969,7 @@ static void engine_sound_task(void *arg) {
                                                   ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
                                                   &bytes_written, pdMS_TO_TICKS(25));
                 if (ret != ESP_OK) {
+                    perf_metrics_record_underrun();
                     vTaskDelay(pdMS_TO_TICKS(5));
                 }
             } else {
