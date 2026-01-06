@@ -30,6 +30,7 @@
 #include "mode_switch.h"
 #include "menu.h"
 #include "metrics.h"
+#include "perf_metrics.h"
 
 static const char *TAG = "MAIN";
 
@@ -430,6 +431,7 @@ void app_main(void)
 
     // Initialize metrics collection
     metrics_init();
+    perf_metrics_init();
 
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔══════════════════════════════════════════╗");
@@ -550,6 +552,7 @@ void app_main(void)
         // Record loop timing metrics
         int64_t loop_end_us = esp_timer_get_time();
         metrics_record_loop_time((uint32_t)(loop_end_us - loop_start_us));
+        perf_metrics_record_loop(loop_start_us);
 
         // Log metrics summary every 10 seconds (1000 loops at 10ms period)
         if (loop_count > 0 && (loop_count % 1000) == 0) {
