@@ -7,6 +7,7 @@ export class CalibrationPage {
         this.elements = {};
         this.pollTimer = null;
         this.data = null;
+        this.destroyed = false;
     }
 
     render() {
@@ -240,8 +241,13 @@ export class CalibrationPage {
         this.pollTimer = setInterval(() => {
             fetch('/api/calibration')
                 .then(r => r.json())
-                .then(data => this.updateUI(data))
-                .catch(err => console.error('Poll error:', err));
+                .then(data => {
+                    if (this.destroyed) return;
+                    this.updateUI(data);
+                })
+                .catch(err => {
+                    if (!this.destroyed) console.error('Poll error:', err);
+                });
         }, 100);  // Poll at 10Hz for responsive pulse display
     }
 
@@ -262,6 +268,7 @@ export class CalibrationPage {
     }
 
     destroy() {
+        this.destroyed = true;
         this.stopPolling();
     }
 }
