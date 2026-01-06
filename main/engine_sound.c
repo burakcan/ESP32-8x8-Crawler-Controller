@@ -698,6 +698,7 @@ static esp_err_t play_start_sound(void) {
     int16_t *buffer = heap_caps_malloc(ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2, MALLOC_CAP_DMA);
     if (!buffer) {
         ESP_LOGE(TAG, "Failed to allocate start sound buffer");
+        engine_state = ENGINE_OFF;  // Reset to safe state on allocation failure
         return ESP_ERR_NO_MEM;
     }
 
@@ -759,6 +760,7 @@ static void engine_sound_task(void *arg) {
     int16_t *buffer = heap_caps_malloc(ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2, MALLOC_CAP_DMA);
     if (!buffer) {
         ESP_LOGE(TAG, "Failed to allocate engine sound buffer");
+        engine_state = ENGINE_OFF;  // Reset to safe state on allocation failure
         engine_task_running = false;
         vTaskDelete(NULL);
         return;
