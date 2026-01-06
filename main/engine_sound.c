@@ -57,6 +57,8 @@ static const sound_profile_def_t *current_profile = NULL;
 #define ENGINE_SAMPLE_RATE      22050
 #define ENGINE_BITS_PER_SAMPLE  16
 #define ENGINE_BUFFER_SIZE      512   // Match sound.c DMA frame size
+// I2S write timeout: ~2x buffer duration (512 samples @ 22050Hz = 23ms)
+#define I2S_WRITE_TIMEOUT_MS    50
 
 // RPM parameters
 #define IDLE_RPM                100     // Base idle RPM (normalized scale)
@@ -721,7 +723,7 @@ static esp_err_t play_start_sound(void) {
 
         esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                           ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                          &bytes_written, pdMS_TO_TICKS(500));
+                                          &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
         if (ret != ESP_OK) {
             // Timeout during start sound is less critical, just continue
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -814,7 +816,7 @@ static void engine_sound_task(void *arg) {
 
             esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                              &bytes_written, pdMS_TO_TICKS(500));
+                                              &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
             if (ret != ESP_OK) {
                 // Only log occasionally to avoid flooding
                 static uint32_t error_count = 0;
@@ -850,7 +852,7 @@ static void engine_sound_task(void *arg) {
 
             esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                               ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                              &bytes_written, pdMS_TO_TICKS(500));
+                                              &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
             if (ret != ESP_OK) {
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
@@ -933,7 +935,7 @@ static void engine_sound_task(void *arg) {
 
                 esp_err_t ret = i2s_channel_write(tx_handle, buffer,
                                                   ENGINE_BUFFER_SIZE * sizeof(int16_t) * 2,
-                                                  &bytes_written, pdMS_TO_TICKS(500));
+                                                  &bytes_written, pdMS_TO_TICKS(I2S_WRITE_TIMEOUT_MS));
                 if (ret != ESP_OK) {
                     vTaskDelay(pdMS_TO_TICKS(5));
                 }
