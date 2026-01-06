@@ -1292,6 +1292,11 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         return;
     }
 
+    // Protect shared state from concurrent access by audio task
+    if (xSemaphoreTake(engine_mutex, pdMS_TO_TICKS(10)) != pdTRUE) {
+        return;  // Skip update if mutex not available (audio task is busy)
+    }
+
     int64_t now = esp_timer_get_time() / 1000;
 
     // Debug logging every 2 seconds
@@ -1604,13 +1609,17 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
                  current_gear, current_rpm, upshift_pt, engine_load, vehicle_speed,
                  effective_throttle, is_braking ? 1 : 0);
     }
+
+    xSemaphoreGive(engine_mutex);
 }
 
 void engine_sound_set_rpm(uint16_t rpm) {
     if (rpm < IDLE_RPM) rpm = IDLE_RPM;
     uint16_t max = (IDLE_RPM * config.max_rpm_percentage) / 100;
     if (rpm > max) rpm = max;
+    xSemaphoreTake(engine_mutex, portMAX_DELAY);
     target_rpm = rpm;
+    xSemaphoreGive(engine_mutex);
 }
 
 uint16_t engine_sound_get_rpm(void) {
