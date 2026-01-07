@@ -30,6 +30,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
+#include "esp_random.h"
 
 // Sound profiles system
 #include "sounds/sound_profiles.h"
@@ -183,6 +184,54 @@ static uint32_t mode_switch_sample_pos = 0;
 // Horn sound (looping while button held)
 static bool horn_active = false;
 static uint32_t horn_sample_pos = 0;
+
+// ============================================================================
+// SOUND EFFECT VARIATION SYSTEM
+// Adds subtle pitch and volume variation to one-shot effects to reduce
+// repetitiveness. Each effect gets random values when triggered.
+// ============================================================================
+
+// Variation ranges (in fixed-point units)
+// Pitch: ±5% variation = 0.95 to 1.05 multiplier
+// Volume: ±12% variation = 0.88 to 1.12 multiplier
+#define PITCH_VARIATION_RANGE   3277    // ±5% of 0x10000 (65536 * 0.05)
+#define VOLUME_VARIATION_RANGE  12      // ±12% (applied to 100-based volume)
+
+// Per-effect variation state (set when effect triggers)
+static uint32_t air_brake_pitch_increment = 0x10000;
+static int8_t air_brake_volume_variation = 0;
+
+static uint32_t gear_shift_pitch_increment = 0x10000;
+static int8_t gear_shift_volume_variation = 0;
+
+static uint32_t wastegate_pitch_increment = 0x10000;
+static int8_t wastegate_volume_variation = 0;
+
+static uint32_t mode_switch_pitch_increment = 0x10000;
+static int8_t mode_switch_volume_variation = 0;
+
+/**
+ * @brief Generate random pitch increment with variation
+ *
+ * Returns a playback increment around 0x10000 (normal speed)
+ * with ±5% random variation for natural sound.
+ */
+static inline uint32_t generate_random_pitch_increment(void) {
+    // esp_random() returns 32-bit random value
+    // Map to range: 0x10000 - PITCH_VARIATION_RANGE to 0x10000 + PITCH_VARIATION_RANGE
+    int32_t variation = (int32_t)(esp_random() % (PITCH_VARIATION_RANGE * 2 + 1)) - PITCH_VARIATION_RANGE;
+    return (uint32_t)(0x10000 + variation);
+}
+
+/**
+ * @brief Generate random volume variation
+ *
+ * Returns a value from -VOLUME_VARIATION_RANGE to +VOLUME_VARIATION_RANGE
+ * to be added to volume percentage calculations.
+ */
+static inline int8_t generate_random_volume_variation(void) {
+    return (int8_t)((esp_random() % (VOLUME_VARIATION_RANGE * 2 + 1)) - VOLUME_VARIATION_RANGE);
+}
 
 // I2S handle (shared with sound.c - we'll get it from there)
 extern i2s_chan_handle_t tx_handle;
@@ -474,9 +523,13 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = air_brake_sample_pos >> 16;
             if (idx < effect_airBrakeSampleCount) {
                 int16_t sample = ((int16_t)effect_airBrakeSamples[idx]) << 8;
-                int32_t vol = (config.air_brake_volume * get_master_volume()) / 100;
+                // Apply volume with random variation
+                int32_t vol_adjusted = config.air_brake_volume + air_brake_volume_variation;
+                if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
+                if (vol_adjusted > 100) vol_adjusted = 100;
+                int32_t vol = (vol_adjusted * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
-                air_brake_sample_pos += 0x10000;  // Normal rate
+                air_brake_sample_pos += air_brake_pitch_increment;  // Variable pitch
             } else {
                 air_brake_trigger = false;
                 air_brake_sample_pos = 0;
@@ -514,9 +567,13 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = gear_shift_sound_sample_pos >> 16;
             if (idx < shift_count) {
                 int16_t sample = ((int16_t)shift_samples[idx]) << 8;
-                int32_t vol = (config.gear_shift_volume * get_master_volume()) / 100;
+                // Apply volume with random variation
+                int32_t vol_adjusted = config.gear_shift_volume + gear_shift_volume_variation;
+                if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
+                if (vol_adjusted > 100) vol_adjusted = 100;
+                int32_t vol = (vol_adjusted * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
-                gear_shift_sound_sample_pos += 0x10000;  // Normal rate
+                gear_shift_sound_sample_pos += gear_shift_pitch_increment;  // Variable pitch
             } else {
                 gear_shift_sound_trigger = false;
                 gear_shift_sound_sample_pos = 0;
@@ -541,11 +598,14 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = wastegate_sample_pos >> 16;
             if (idx < wg_count) {
                 int16_t sample = ((int16_t)wg_samples[idx]) << 8;
-                // RPM-dependent wastegate volume (louder at higher RPM)
+                // RPM-dependent wastegate volume (louder at higher RPM) + random variation
                 int32_t rpm_vol = 50 + (current_rpm * 50 / MAX_RPM);  // 50-100%
-                int32_t vol = (config.wastegate_volume * rpm_vol * get_master_volume()) / 10000;
+                int32_t vol_adjusted = config.wastegate_volume + wastegate_volume_variation;
+                if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
+                if (vol_adjusted > 100) vol_adjusted = 100;
+                int32_t vol = (vol_adjusted * rpm_vol * get_master_volume()) / 10000;
                 mix += ((int32_t)sample * vol) >> 8;
-                wastegate_sample_pos += 0x10000;  // Normal rate
+                wastegate_sample_pos += wastegate_pitch_increment;  // Variable pitch
             } else {
                 wastegate_trigger = false;
                 wastegate_sample_pos = 0;
@@ -557,9 +617,13 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
             uint32_t idx = mode_switch_sample_pos >> 16;
             if (idx < modeSwitchSampleCount) {
                 int16_t sample = ((int16_t)modeSwitchSamples[idx]) << 8;
-                int32_t vol = (config.mode_switch_volume * get_master_volume()) / 100;
+                // Apply volume with random variation
+                int32_t vol_adjusted = config.mode_switch_volume + mode_switch_volume_variation;
+                if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
+                if (vol_adjusted > 100) vol_adjusted = 100;
+                int32_t vol = (vol_adjusted * get_master_volume()) / 100;
                 mix += ((int32_t)sample * vol) >> 8;
-                mode_switch_sample_pos += 0x10000;  // Normal rate
+                mode_switch_sample_pos += mode_switch_pitch_increment;  // Variable pitch
             } else {
                 mode_switch_trigger = false;
                 mode_switch_sample_pos = 0;
@@ -1470,8 +1534,11 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
     if (motor_just_stopped && peak_vehicle_speed > 100 && !air_brake_trigger) {
         air_brake_trigger = true;
         air_brake_sample_pos = 0;
-        ESP_LOGI(TAG, "Air brake triggered (motor stopped, peak: %d, cutoff: %d)",
-                 peak_vehicle_speed, motor_cutoff_scaled);
+        // Generate random variation for this instance
+        air_brake_pitch_increment = generate_random_pitch_increment();
+        air_brake_volume_variation = generate_random_volume_variation();
+        ESP_LOGI(TAG, "Air brake triggered (motor stopped, peak: %d, pitch: 0x%lx, vol: %+d%%)",
+                 peak_vehicle_speed, (unsigned long)air_brake_pitch_increment, air_brake_volume_variation);
         peak_vehicle_speed = 0;  // Reset after triggering
     }
     was_motor_stopped = motor_stopped;
@@ -1498,7 +1565,11 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
     if (gear_shift_trigger && !gear_shift_sound_trigger) {
         gear_shift_sound_trigger = true;
         gear_shift_sound_sample_pos = 0;
-        ESP_LOGI(TAG, "Gear shift sound triggered");
+        // Generate random variation for this instance
+        gear_shift_pitch_increment = generate_random_pitch_increment();
+        gear_shift_volume_variation = generate_random_volume_variation();
+        ESP_LOGI(TAG, "Gear shift sound triggered (pitch: 0x%lx, vol: %+d%%)",
+                 (unsigned long)gear_shift_pitch_increment, gear_shift_volume_variation);
     }
 
     // Wastegate/blowoff: trigger after rapid throttle drop from high throttle
@@ -1510,8 +1581,12 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         wastegate_trigger = true;
         wastegate_sample_pos = 0;
         wastegate_lockout_time = now;
+        // Generate random variation for this instance
+        wastegate_pitch_increment = generate_random_pitch_increment();
+        wastegate_volume_variation = generate_random_volume_variation();
+        ESP_LOGI(TAG, "Wastegate triggered (pitch: 0x%lx, vol: %+d%%)",
+                 (unsigned long)wastegate_pitch_increment, wastegate_volume_variation);
         prev_throttle_for_wastegate = 0;  // Reset to prevent repeated triggers
-        ESP_LOGI(TAG, "Wastegate triggered (throttle: %d -> %d)", prev_throttle_for_wastegate, effective_throttle);
     }
 
     // Update throttle tracking - only when throttle is high enough to build boost
@@ -1633,6 +1708,9 @@ void engine_sound_play_mode_switch(void) {
     if (engine_state == ENGINE_RUNNING) {
         mode_switch_trigger = true;
         mode_switch_sample_pos = 0;
+        // Generate random variation for this instance
+        mode_switch_pitch_increment = generate_random_pitch_increment();
+        mode_switch_volume_variation = generate_random_volume_variation();
     }
 }
 
@@ -1661,6 +1739,9 @@ uint8_t engine_sound_toggle_volume_level(void) {
     if (engine_state == ENGINE_RUNNING) {
         mode_switch_trigger = true;
         mode_switch_sample_pos = 0;
+        // Generate random variation for this instance
+        mode_switch_pitch_increment = generate_random_pitch_increment();
+        mode_switch_volume_variation = generate_random_volume_variation();
     }
 
     // Save the new setting to NVS
