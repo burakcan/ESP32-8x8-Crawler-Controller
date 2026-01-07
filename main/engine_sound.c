@@ -197,18 +197,29 @@ static uint32_t horn_sample_pos = 0;
 #define PITCH_VARIATION_RANGE   3277    // ±5% of 0x10000 (65536 * 0.05)
 #define VOLUME_VARIATION_RANGE  12      // ±12% (applied to 100-based volume)
 
+// Attack envelope variation (in samples at 22050 Hz)
+// Fast attack (~3ms) = sharp, aggressive sound
+// Slow attack (~40ms) = soft, smooth sound
+#define ATTACK_MIN_SAMPLES      66      // ~3ms minimum attack
+#define ATTACK_MAX_SAMPLES      882     // ~40ms maximum attack
+#define ATTACK_RANGE            (ATTACK_MAX_SAMPLES - ATTACK_MIN_SAMPLES)
+
 // Per-effect variation state (set when effect triggers)
 static uint32_t air_brake_pitch_increment = 0x10000;
 static int8_t air_brake_volume_variation = 0;
+static uint16_t air_brake_attack_samples = ATTACK_MIN_SAMPLES;
 
 static uint32_t gear_shift_pitch_increment = 0x10000;
 static int8_t gear_shift_volume_variation = 0;
+static uint16_t gear_shift_attack_samples = ATTACK_MIN_SAMPLES;
 
 static uint32_t wastegate_pitch_increment = 0x10000;
 static int8_t wastegate_volume_variation = 0;
+static uint16_t wastegate_attack_samples = ATTACK_MIN_SAMPLES;
 
 static uint32_t mode_switch_pitch_increment = 0x10000;
 static int8_t mode_switch_volume_variation = 0;
+static uint16_t mode_switch_attack_samples = ATTACK_MIN_SAMPLES;
 
 /**
  * @brief Generate random pitch increment with variation
@@ -231,6 +242,31 @@ static inline uint32_t generate_random_pitch_increment(void) {
  */
 static inline int8_t generate_random_volume_variation(void) {
     return (int8_t)((esp_random() % (VOLUME_VARIATION_RANGE * 2 + 1)) - VOLUME_VARIATION_RANGE);
+}
+
+/**
+ * @brief Generate random attack time in samples
+ *
+ * Returns attack duration between ATTACK_MIN_SAMPLES and ATTACK_MAX_SAMPLES.
+ * Shorter attack = sharp/aggressive sound, longer = soft/smooth.
+ */
+static inline uint16_t generate_random_attack_samples(void) {
+    return ATTACK_MIN_SAMPLES + (esp_random() % (ATTACK_RANGE + 1));
+}
+
+/**
+ * @brief Calculate envelope multiplier for attack phase
+ *
+ * @param sample_pos Current sample position (integer, not fixed-point)
+ * @param attack_samples Total attack duration in samples
+ * @return Envelope multiplier 0-256 (use >> 8 to apply)
+ */
+static inline uint16_t calc_attack_envelope(uint32_t sample_pos, uint16_t attack_samples) {
+    if (sample_pos >= attack_samples) {
+        return 256;  // Full volume after attack phase
+    }
+    // Linear ramp: 0 at start, 256 at end of attack
+    return (uint16_t)((sample_pos * 256) / attack_samples);
 }
 
 // I2S handle (shared with sound.c - we'll get it from there)
@@ -528,7 +564,10 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
                 if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
                 if (vol_adjusted > 100) vol_adjusted = 100;
                 int32_t vol = (vol_adjusted * get_master_volume()) / 100;
-                mix += ((int32_t)sample * vol) >> 8;
+                // Apply attack envelope
+                uint16_t envelope = calc_attack_envelope(idx, air_brake_attack_samples);
+                int32_t sample_out = (((int32_t)sample * vol) >> 8) * envelope >> 8;
+                mix += sample_out;
                 air_brake_sample_pos += air_brake_pitch_increment;  // Variable pitch
             } else {
                 air_brake_trigger = false;
@@ -572,7 +611,10 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
                 if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
                 if (vol_adjusted > 100) vol_adjusted = 100;
                 int32_t vol = (vol_adjusted * get_master_volume()) / 100;
-                mix += ((int32_t)sample * vol) >> 8;
+                // Apply attack envelope
+                uint16_t envelope = calc_attack_envelope(idx, gear_shift_attack_samples);
+                int32_t sample_out = (((int32_t)sample * vol) >> 8) * envelope >> 8;
+                mix += sample_out;
                 gear_shift_sound_sample_pos += gear_shift_pitch_increment;  // Variable pitch
             } else {
                 gear_shift_sound_trigger = false;
@@ -604,7 +646,10 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
                 if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
                 if (vol_adjusted > 100) vol_adjusted = 100;
                 int32_t vol = (vol_adjusted * rpm_vol * get_master_volume()) / 10000;
-                mix += ((int32_t)sample * vol) >> 8;
+                // Apply attack envelope
+                uint16_t envelope = calc_attack_envelope(idx, wastegate_attack_samples);
+                int32_t sample_out = (((int32_t)sample * vol) >> 8) * envelope >> 8;
+                mix += sample_out;
                 wastegate_sample_pos += wastegate_pitch_increment;  // Variable pitch
             } else {
                 wastegate_trigger = false;
@@ -622,7 +667,10 @@ static void mix_engine_samples(int16_t *buffer, size_t num_samples) {
                 if (vol_adjusted < 10) vol_adjusted = 10;  // Minimum 10%
                 if (vol_adjusted > 100) vol_adjusted = 100;
                 int32_t vol = (vol_adjusted * get_master_volume()) / 100;
-                mix += ((int32_t)sample * vol) >> 8;
+                // Apply attack envelope
+                uint16_t envelope = calc_attack_envelope(idx, mode_switch_attack_samples);
+                int32_t sample_out = (((int32_t)sample * vol) >> 8) * envelope >> 8;
+                mix += sample_out;
                 mode_switch_sample_pos += mode_switch_pitch_increment;  // Variable pitch
             } else {
                 mode_switch_trigger = false;
@@ -1537,8 +1585,9 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         // Generate random variation for this instance
         air_brake_pitch_increment = generate_random_pitch_increment();
         air_brake_volume_variation = generate_random_volume_variation();
-        ESP_LOGI(TAG, "Air brake triggered (motor stopped, peak: %d, pitch: 0x%lx, vol: %+d%%)",
-                 peak_vehicle_speed, (unsigned long)air_brake_pitch_increment, air_brake_volume_variation);
+        air_brake_attack_samples = generate_random_attack_samples();
+        ESP_LOGI(TAG, "Air brake triggered (peak: %d, atk: %dms)",
+                 peak_vehicle_speed, air_brake_attack_samples * 1000 / ENGINE_SAMPLE_RATE);
         peak_vehicle_speed = 0;  // Reset after triggering
     }
     was_motor_stopped = motor_stopped;
@@ -1568,8 +1617,9 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         // Generate random variation for this instance
         gear_shift_pitch_increment = generate_random_pitch_increment();
         gear_shift_volume_variation = generate_random_volume_variation();
-        ESP_LOGI(TAG, "Gear shift sound triggered (pitch: 0x%lx, vol: %+d%%)",
-                 (unsigned long)gear_shift_pitch_increment, gear_shift_volume_variation);
+        gear_shift_attack_samples = generate_random_attack_samples();
+        ESP_LOGI(TAG, "Gear shift sound triggered (atk: %dms)",
+                 gear_shift_attack_samples * 1000 / ENGINE_SAMPLE_RATE);
     }
 
     // Wastegate/blowoff: trigger after rapid throttle drop from high throttle
@@ -1584,8 +1634,9 @@ void engine_sound_update(int16_t throttle, int16_t speed) {
         // Generate random variation for this instance
         wastegate_pitch_increment = generate_random_pitch_increment();
         wastegate_volume_variation = generate_random_volume_variation();
-        ESP_LOGI(TAG, "Wastegate triggered (pitch: 0x%lx, vol: %+d%%)",
-                 (unsigned long)wastegate_pitch_increment, wastegate_volume_variation);
+        wastegate_attack_samples = generate_random_attack_samples();
+        ESP_LOGI(TAG, "Wastegate triggered (atk: %dms)",
+                 wastegate_attack_samples * 1000 / ENGINE_SAMPLE_RATE);
         prev_throttle_for_wastegate = 0;  // Reset to prevent repeated triggers
     }
 
@@ -1711,6 +1762,7 @@ void engine_sound_play_mode_switch(void) {
         // Generate random variation for this instance
         mode_switch_pitch_increment = generate_random_pitch_increment();
         mode_switch_volume_variation = generate_random_volume_variation();
+        mode_switch_attack_samples = generate_random_attack_samples();
     }
 }
 
@@ -1742,6 +1794,7 @@ uint8_t engine_sound_toggle_volume_level(void) {
         // Generate random variation for this instance
         mode_switch_pitch_increment = generate_random_pitch_increment();
         mode_switch_volume_variation = generate_random_volume_variation();
+        mode_switch_attack_samples = generate_random_attack_samples();
     }
 
     // Save the new setting to NVS
