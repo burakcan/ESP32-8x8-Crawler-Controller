@@ -150,6 +150,7 @@ static void process_control_loop(void)
             esc_set_neutral();
             servo_center_all();
             tuning_reset_realistic_throttle();  // Reset simulated velocity
+            tuning_reset_realistic_steering();  // Reset steering positions
         }
         return;
     }
@@ -214,42 +215,50 @@ static void process_control_loop(void)
         current_steering_mode = new_mode;
     }
 
+    // Apply realistic steering if enabled (smooth interpolation of input)
+    // This must happen BEFORE applying ratios - like a mechanical linkage,
+    // all axles follow one smoothed steering input proportionally
+    int16_t smoothed_steer = steer;
+    if (tuning_is_realistic_steering_enabled()) {
+        smoothed_steer = tuning_apply_realistic_steering(steer);
+    }
+
     // Calculate per-axle steering based on mode and axle ratios
-    int16_t axle_values[4] = {0, 0, 0, 0};
+    int16_t final_positions[SERVO_COUNT] = {0, 0, 0, 0};
 
     switch (current_steering_mode) {
         case STEER_MODE_FRONT:
             // Axles 1-2 steer, 3-4 fixed (like a car)
-            axle_values[0] = (steer * tuning_get_axle_ratio(0, current_steering_mode)) / 100;
-            axle_values[1] = (steer * tuning_get_axle_ratio(1, current_steering_mode)) / 100;
-            axle_values[2] = 0;
-            axle_values[3] = 0;
+            final_positions[0] = (smoothed_steer * tuning_get_axle_ratio(0, current_steering_mode)) / 100;
+            final_positions[1] = (smoothed_steer * tuning_get_axle_ratio(1, current_steering_mode)) / 100;
+            final_positions[2] = 0;
+            final_positions[3] = 0;
             break;
 
         case STEER_MODE_REAR:
             // Axles 3-4 steer, 1-2 fixed (reverse direction for intuitive control)
-            axle_values[0] = 0;
-            axle_values[1] = 0;
-            axle_values[2] = (-steer * tuning_get_axle_ratio(2, current_steering_mode)) / 100;
-            axle_values[3] = (-steer * tuning_get_axle_ratio(3, current_steering_mode)) / 100;
+            final_positions[0] = 0;
+            final_positions[1] = 0;
+            final_positions[2] = (-smoothed_steer * tuning_get_axle_ratio(2, current_steering_mode)) / 100;
+            final_positions[3] = (-smoothed_steer * tuning_get_axle_ratio(3, current_steering_mode)) / 100;
             break;
 
         case STEER_MODE_ALL_AXLE:
             // All axles steer (1-2 opposite to 3-4 for tighter turning)
             // Rear gets additional ratio reduction via tuning_get_axle_ratio
-            axle_values[0] = (steer * tuning_get_axle_ratio(0, current_steering_mode)) / 100;
-            axle_values[1] = (steer * tuning_get_axle_ratio(1, current_steering_mode)) / 100;
-            axle_values[2] = (-steer * tuning_get_axle_ratio(2, current_steering_mode)) / 100;
-            axle_values[3] = (-steer * tuning_get_axle_ratio(3, current_steering_mode)) / 100;
+            final_positions[0] = (smoothed_steer * tuning_get_axle_ratio(0, current_steering_mode)) / 100;
+            final_positions[1] = (smoothed_steer * tuning_get_axle_ratio(1, current_steering_mode)) / 100;
+            final_positions[2] = (-smoothed_steer * tuning_get_axle_ratio(2, current_steering_mode)) / 100;
+            final_positions[3] = (-smoothed_steer * tuning_get_axle_ratio(3, current_steering_mode)) / 100;
             break;
 
         case STEER_MODE_CRAB:
             // All axles same direction at 100% (crab walk / sideways)
             // No ratios applied - all wheels must point the same direction
-            axle_values[0] = steer;
-            axle_values[1] = steer;
-            axle_values[2] = steer;
-            axle_values[3] = steer;
+            final_positions[0] = smoothed_steer;
+            final_positions[1] = smoothed_steer;
+            final_positions[2] = smoothed_steer;
+            final_positions[3] = smoothed_steer;
             break;
 
         default:
@@ -260,7 +269,7 @@ static void process_control_loop(void)
     // Skip if servo test mode is active (UI controls servos directly)
     if (!web_server_is_servo_test_active()) {
         for (int i = 0; i < SERVO_COUNT; i++) {
-            uint16_t pulse = tuning_calc_servo_pulse(i, axle_values[i]);
+            uint16_t pulse = tuning_calc_servo_pulse(i, final_positions[i]);
             servo_set_pulse((servo_id_t)i, pulse);
         }
     }

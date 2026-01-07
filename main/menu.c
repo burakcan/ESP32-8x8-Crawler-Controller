@@ -15,6 +15,7 @@
 #include "engine_sound.h"
 #include "web_server.h"
 #include "nvs_storage.h"
+#include "tuning.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
@@ -29,6 +30,7 @@
 #include "sounds/menu/cat_profile.h"
 #include "sounds/menu/cat_horn.h"
 #include "sounds/menu/cat_wifi.h"
+#include "sounds/menu/cat_steering.h"
 #include "sounds/menu/opt_vol_low.h"
 #include "sounds/menu/opt_vol_medium.h"
 #include "sounds/menu/opt_vol_high.h"
@@ -42,8 +44,8 @@
 #include "sounds/menu/opt_horn_dixie.h"
 #include "sounds/menu/opt_horn_peterbilt.h"
 #include "sounds/menu/opt_horn_outlaw.h"
-#include "sounds/menu/opt_wifi_on.h"
-#include "sounds/menu/opt_wifi_off.h"
+#include "sounds/menu/opt_on.h"
+#include "sounds/menu/opt_off.h"
 
 static const char *TAG = "MENU";
 
@@ -116,7 +118,7 @@ static void enter_menu(void)
 
     // Then play current category
     vTaskDelay(pdMS_TO_TICKS(200));
-    const char *cat_names[] = {"Volume", "Profile", "Horn", "WiFi"};
+    const char *cat_names[] = {"Volume", "Profile", "Horn", "Steering", "WiFi"};
     ESP_LOGI(TAG, "Category: %s", cat_names[category_index]);
     play_category_sound(category_index);
 }
@@ -168,6 +170,10 @@ static void play_category_sound(uint8_t cat)
         case MENU_CAT_HORN:
             sound_play_sample(menu_cat_hornSamples, menu_cat_hornSampleCount,
                               menu_cat_hornSampleRate, 80);
+            break;
+        case MENU_CAT_STEERING:
+            sound_play_sample(menu_cat_steeringSamples, menu_cat_steeringSampleCount,
+                              menu_cat_steeringSampleRate, 80);
             break;
         case MENU_CAT_WIFI:
             sound_play_sample(menu_cat_wifiSamples, menu_cat_wifiSampleCount,
@@ -255,11 +261,21 @@ static void play_option_sound(uint8_t cat, uint8_t opt)
 
         case MENU_CAT_WIFI:
             if (opt == MENU_WIFI_ON) {
-                sound_play_sample(menu_opt_wifi_onSamples, menu_opt_wifi_onSampleCount,
-                                  menu_opt_wifi_onSampleRate, 80);
+                sound_play_sample(menu_opt_onSamples, menu_opt_onSampleCount,
+                                  menu_opt_onSampleRate, 80);
             } else {
-                sound_play_sample(menu_opt_wifi_offSamples, menu_opt_wifi_offSampleCount,
-                                  menu_opt_wifi_offSampleRate, 80);
+                sound_play_sample(menu_opt_offSamples, menu_opt_offSampleCount,
+                                  menu_opt_offSampleRate, 80);
+            }
+            break;
+
+        case MENU_CAT_STEERING:
+            if (opt == MENU_STEERING_ON) {
+                sound_play_sample(menu_opt_onSamples, menu_opt_onSampleCount,
+                                  menu_opt_onSampleRate, 80);
+            } else {
+                sound_play_sample(menu_opt_offSamples, menu_opt_offSampleCount,
+                                  menu_opt_offSampleRate, 80);
             }
             break;
     }
@@ -286,6 +302,9 @@ static uint8_t get_current_option(uint8_t cat)
         case MENU_CAT_WIFI:
             return web_server_wifi_is_enabled() ? MENU_WIFI_ON : MENU_WIFI_OFF;
 
+        case MENU_CAT_STEERING:
+            return tuning_is_realistic_steering_enabled() ? MENU_STEERING_ON : MENU_STEERING_OFF;
+
         default:
             return 0;
     }
@@ -305,6 +324,8 @@ static uint8_t get_option_count(uint8_t cat)
             return MENU_HORN_COUNT;
         case MENU_CAT_WIFI:
             return MENU_WIFI_COUNT;
+        case MENU_CAT_STEERING:
+            return MENU_STEERING_COUNT;
         default:
             return 1;
     }
@@ -359,6 +380,19 @@ static void apply_option(uint8_t cat, uint8_t opt)
                 web_server_wifi_disable();
             }
             break;
+
+        case MENU_CAT_STEERING: {
+            bool enable = (opt == MENU_STEERING_ON);
+            ESP_LOGI(TAG, "%s realistic steering", enable ? "Enabling" : "Disabling");
+
+            // Get current config, update steering, save
+            const tuning_config_t *current = tuning_get_config();
+            tuning_config_t new_config = *current;
+            new_config.steering.realistic_enabled = enable;
+            tuning_set_config(&new_config);
+            tuning_save();
+            break;
+        }
     }
 }
 
@@ -441,7 +475,7 @@ void menu_update(bool aux2_pressed)
             if (state == MENU_STATE_LEVEL1) {
                 // Cycle to next category
                 category_index = (category_index + 1) % MENU_CAT_COUNT;
-                const char *cat_names[] = {"Volume", "Profile", "Horn", "WiFi"};
+                const char *cat_names[] = {"Volume", "Profile", "Horn", "Steering", "WiFi"};
                 ESP_LOGI(TAG, "Category: %s (%d beeps)", cat_names[category_index], category_index + 1);
                 play_category_sound(category_index);
             } else if (state == MENU_STATE_LEVEL2) {
@@ -460,6 +494,8 @@ void menu_update(bool aux2_pressed)
                 } else if (category_index == MENU_CAT_HORN) {
                     const char *horn_names[] = {"Truck", "MAN TGE", "La Cucaracha", "2-Tone", "Dixie", "Peterbilt", "Outlaw"};
                     opt_name = horn_names[option_index < MENU_HORN_COUNT ? option_index : 0];
+                } else if (category_index == MENU_CAT_STEERING) {
+                    opt_name = option_index == MENU_STEERING_ON ? "On" : "Off";
                 } else {
                     opt_name = option_index == MENU_WIFI_ON ? "On" : "Off";
                 }
@@ -493,14 +529,14 @@ void menu_handle_confirm(bool aux1_pressed)
             state = MENU_STATE_LEVEL2;
             option_index = get_current_option(category_index);
 
-            const char *cat_names[] = {"Volume", "Profile", "Horn", "WiFi"};
+            const char *cat_names[] = {"Volume", "Profile", "Horn", "Steering", "WiFi"};
             ESP_LOGI(TAG, "=== ENTERING %s (Level 2, option %d) ===", cat_names[category_index], option_index);
 
             // Play current option TTS (no need for transition sound with TTS)
             play_option_sound(category_index, option_index);
         } else if (state == MENU_STATE_LEVEL2) {
             // Confirm selection - log with readable names
-            const char *cat_names[] = {"Volume", "Profile", "Horn", "WiFi"};
+            const char *cat_names[] = {"Volume", "Profile", "Horn", "Steering", "WiFi"};
             const char *opt_name;
             if (category_index == MENU_CAT_VOLUME) {
                 opt_name = option_index == MENU_VOL_LOW ? "Low" :
@@ -511,6 +547,8 @@ void menu_handle_confirm(bool aux1_pressed)
             } else if (category_index == MENU_CAT_HORN) {
                 const char *horn_names[] = {"Truck", "MAN TGE", "La Cucaracha", "2-Tone", "Dixie", "Peterbilt", "Outlaw"};
                 opt_name = horn_names[option_index < MENU_HORN_COUNT ? option_index : 0];
+            } else if (category_index == MENU_CAT_STEERING) {
+                opt_name = option_index == MENU_STEERING_ON ? "On" : "Off";
             } else {
                 opt_name = option_index == MENU_WIFI_ON ? "On" : "Off";
             }

@@ -171,6 +171,10 @@ typedef struct {
     uint8_t all_axle_rear_ratio; // Rear axle ratio in all-axle mode (0-100%)
     uint8_t expo;                // Steering expo curve (0-100%, 0=linear)
     uint8_t speed_steering;      // Speed-dependent steering reduction (0-100%, 0=disabled)
+    // Realistic steering simulation
+    bool realistic_enabled;      // Enable weighted/slow steering motion
+    uint8_t responsiveness;      // Steering speed (0=very slow/heavy, 100=instant)
+    uint8_t return_rate;         // Center return speed (0=slow, 100=fast)
 } steering_tuning_t;
 
 // ESC/Motor tuning settings
@@ -196,7 +200,7 @@ typedef struct {
 } tuning_config_t;
 
 #define TUNING_MAGIC            0x54554E45  // "TUNE" in hex
-#define TUNING_VERSION          8           // Added motor_cutoff
+#define TUNING_VERSION          9           // Added realistic steering
 
 // Default tuning values
 #define TUNING_DEFAULT_SERVO_MIN        1000
@@ -210,6 +214,9 @@ typedef struct {
 #define TUNING_DEFAULT_ALL_AXLE_REAR    80
 #define TUNING_DEFAULT_EXPO             0
 #define TUNING_DEFAULT_SPEED_STEERING   0       // 0=disabled, 100=max reduction at full throttle
+#define TUNING_DEFAULT_REALISTIC_STEER  false   // Default to instant steering response
+#define TUNING_DEFAULT_RESPONSIVENESS   50      // Medium responsiveness (0=slow/heavy, 100=instant)
+#define TUNING_DEFAULT_RETURN_RATE      70      // Fairly fast return to center
 #define TUNING_DEFAULT_FWD_LIMIT        100
 #define TUNING_DEFAULT_REV_LIMIT        100
 #define TUNING_DEFAULT_ESC_DEADZONE     30

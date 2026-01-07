@@ -87,6 +87,28 @@ int16_t tuning_apply_realistic_throttle(int16_t throttle_input);
 void tuning_reset_realistic_throttle(void);
 
 /**
+ * @brief Apply realistic steering behavior (weighted/slow servo movement)
+ * Smoothly interpolates a single steering input for a weighted feel.
+ * All axles follow this proportionally (like a mechanical linkage).
+ * Uses responsiveness setting for steering speed, return_rate for centering.
+ * @param target_input Target steering input (-1000 to +1000)
+ * @return Smoothed steering input to apply ratios to
+ */
+int16_t tuning_apply_realistic_steering(int16_t target_input);
+
+/**
+ * @brief Reset realistic steering state (e.g., on signal loss)
+ * Instantly centers all servos
+ */
+void tuning_reset_realistic_steering(void);
+
+/**
+ * @brief Check if realistic steering is enabled
+ * @return true if enabled in config
+ */
+bool tuning_is_realistic_steering_enabled(void);
+
+/**
  * @brief Get current simulated velocity
  * @return Current velocity (-1000 to +1000)
  */

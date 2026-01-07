@@ -628,7 +628,10 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
         "\"ratio\":[%d,%d,%d,%d],"
         "\"allAxleRear\":%d,"
         "\"expo\":%d,"
-        "\"speedSteering\":%d"
+        "\"speedSteering\":%d,"
+        "\"realisticEnabled\":%s,"
+        "\"responsiveness\":%d,"
+        "\"returnRate\":%d"
         "},"
         "\"esc\":{"
         "\"fwdLimit\":%d,"
@@ -650,6 +653,9 @@ static esp_err_t tuning_get_handler(httpd_req_t *req)
         cfg->steering.all_axle_rear_ratio,
         cfg->steering.expo,
         cfg->steering.speed_steering,
+        cfg->steering.realistic_enabled ? "true" : "false",
+        cfg->steering.responsiveness,
+        cfg->steering.return_rate,
         cfg->esc.fwd_limit,
         cfg->esc.rev_limit,
         cfg->esc.subtrim,
@@ -759,6 +765,11 @@ static esp_err_t tuning_post_handler(httpd_req_t *req)
     if (parse_json_int(buf, "allAxleRear", &val)) cfg.steering.all_axle_rear_ratio = val;
     if (parse_json_int(buf, "expo", &val)) cfg.steering.expo = val;
     if (parse_json_int(buf, "speedSteering", &val)) cfg.steering.speed_steering = val;
+
+    // Realistic steering
+    if (parse_json_bool(buf, "realisticEnabled", &bval)) cfg.steering.realistic_enabled = bval;
+    if (parse_json_int(buf, "responsiveness", &val)) cfg.steering.responsiveness = val;
+    if (parse_json_int(buf, "returnRate", &val)) cfg.steering.return_rate = val;
 
     // ESC settings
     if (parse_json_int(buf, "fwdLimit", &val)) cfg.esc.fwd_limit = val;

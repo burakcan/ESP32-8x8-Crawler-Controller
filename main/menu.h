@@ -36,6 +36,7 @@ typedef enum {
     MENU_CAT_VOLUME = 0,        // Master volume setting
     MENU_CAT_PROFILE,           // Sound profile selection
     MENU_CAT_HORN,              // Horn type selection
+    MENU_CAT_STEERING,          // Realistic steering on/off
     MENU_CAT_WIFI,              // WiFi enable/disable
     MENU_CAT_COUNT
 } menu_category_t;
@@ -68,6 +69,15 @@ typedef enum {
     MENU_WIFI_OFF,
     MENU_WIFI_COUNT
 } menu_wifi_option_t;
+
+/**
+ * @brief Steering options (realistic steering toggle)
+ */
+typedef enum {
+    MENU_STEERING_ON = 0,
+    MENU_STEERING_OFF,
+    MENU_STEERING_COUNT
+} menu_steering_option_t;
 
 /**
  * @brief Horn type options (matches horn_type_t)

@@ -59,9 +59,12 @@ $sounds = @{
     "opt_profile_unimog" = "Unimog"
     "opt_profile_man" = "Man"
 
-    # WiFi options
-    "opt_wifi_on" = "On"
-    "opt_wifi_off" = "Off"
+    # Generic options (reusable)
+    "opt_on" = "On"
+    "opt_off" = "Off"
+
+    # Categories (continued)
+    "cat_steering" = "Steering"
 
     # Horn options
     "opt_horn_truck" = "Truck"

@@ -39,6 +39,25 @@ export class TuningPage {
                     </div>
                 </div>
 
+                <!-- Realistic Steering Card -->
+                <div class="card">
+                    <h2>Realistic Steering</h2>
+                    <div class="tuning-group">
+                        <div class="tuning-row">
+                            <label>Enable Realistic Mode</label>
+                            <label class="toggle">
+                                <input type="checkbox" id="steer-realistic"/>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="hint">When enabled, servos move smoothly with a weighted feel instead of snapping instantly. Simulates hydraulic power steering.</div>
+                        ${this.renderSliderRow('steer-responsiveness', 'Responsiveness', 0, 100, 50, '%')}
+                        <div class="hint">How fast servos move. 0% = very slow/heavy, 100% = instant response.</div>
+                        ${this.renderSliderRow('steer-return-rate', 'Return Rate', 0, 100, 70, '%')}
+                        <div class="hint">How fast steering returns to center when released. 0% = slow, 100% = fast.</div>
+                    </div>
+                </div>
+
                 <!-- ESC Settings Card -->
                 <div class="card">
                     <h2>ESC Settings</h2>
@@ -186,6 +205,12 @@ export class TuningPage {
             escBrakeNum: document.getElementById('esc-brake-num'),
             escMotorCutoff: document.getElementById('esc-motor-cutoff'),
             escMotorCutoffNum: document.getElementById('esc-motor-cutoff-num'),
+            // Realistic steering elements
+            steerRealistic: document.getElementById('steer-realistic'),
+            steerResponsiveness: document.getElementById('steer-responsiveness'),
+            steerResponsivenessNum: document.getElementById('steer-responsiveness-num'),
+            steerReturnRate: document.getElementById('steer-return-rate'),
+            steerReturnRateNum: document.getElementById('steer-return-rate-num'),
             resetBtn: document.getElementById('tuning-reset'),
             // Servo test elements
             servoTestActive: document.getElementById('servo-test-active'),
@@ -231,6 +256,11 @@ export class TuningPage {
         this.syncSliderAndInput(this.elements.allAxleRear, this.elements.allAxleRearNum);
         this.syncSliderAndInput(this.elements.expo, this.elements.expoNum);
         this.syncSliderAndInput(this.elements.speedSteering, this.elements.speedSteeringNum);
+
+        // Sync slider/input pairs for realistic steering
+        this.syncSliderAndInput(this.elements.steerResponsiveness, this.elements.steerResponsivenessNum);
+        this.syncSliderAndInput(this.elements.steerReturnRate, this.elements.steerReturnRateNum);
+        this.elements.steerRealistic.addEventListener('change', () => this.scheduleAutoSave());
 
         // Sync slider/input pairs for ESC
         this.syncSliderAndInput(this.elements.escFwd, this.elements.escFwdNum);
@@ -345,6 +375,18 @@ export class TuningPage {
                 this.elements.speedSteering.value = data.steering.speedSteering;
                 this.elements.speedSteeringNum.value = data.steering.speedSteering;
             }
+            // Realistic steering settings
+            if (data.steering.realisticEnabled !== undefined) {
+                this.elements.steerRealistic.checked = data.steering.realisticEnabled;
+            }
+            if (data.steering.responsiveness !== undefined) {
+                this.elements.steerResponsiveness.value = data.steering.responsiveness;
+                this.elements.steerResponsivenessNum.value = data.steering.responsiveness;
+            }
+            if (data.steering.returnRate !== undefined) {
+                this.elements.steerReturnRate.value = data.steering.returnRate;
+                this.elements.steerReturnRateNum.value = data.steering.returnRate;
+            }
         }
 
         // Apply ESC settings from data.esc
@@ -413,6 +455,11 @@ export class TuningPage {
         config.allAxleRear = parseInt(this.elements.allAxleRear.value);
         config.expo = parseInt(this.elements.expo.value);
         config.speedSteering = parseInt(this.elements.speedSteering.value);
+
+        // Gather realistic steering settings
+        config.realisticEnabled = this.elements.steerRealistic.checked;
+        config.responsiveness = parseInt(this.elements.steerResponsiveness.value);
+        config.returnRate = parseInt(this.elements.steerReturnRate.value);
 
         // Gather ESC settings
         config.fwdLimit = parseInt(this.elements.escFwd.value);

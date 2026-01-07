@@ -49,6 +49,10 @@ void tuning_get_defaults(tuning_config_t *config)
     config->steering.all_axle_rear_ratio = TUNING_DEFAULT_ALL_AXLE_REAR;
     config->steering.expo = TUNING_DEFAULT_EXPO;
     config->steering.speed_steering = TUNING_DEFAULT_SPEED_STEERING;
+    // Realistic steering defaults
+    config->steering.realistic_enabled = TUNING_DEFAULT_REALISTIC_STEER;
+    config->steering.responsiveness = TUNING_DEFAULT_RESPONSIVENESS;
+    config->steering.return_rate = TUNING_DEFAULT_RETURN_RATE;
 
     // ESC defaults
     config->esc.fwd_limit = TUNING_DEFAULT_FWD_LIMIT;
@@ -105,6 +109,12 @@ static void tuning_migrate(tuning_config_t *old_config, uint32_t old_version)
     if (old_version >= 8) {
         // v8+ has motor_cutoff
         new_config.esc.motor_cutoff = old_config->esc.motor_cutoff;
+    }
+    if (old_version >= 9) {
+        // v9+ has realistic steering
+        new_config.steering.realistic_enabled = old_config->steering.realistic_enabled;
+        new_config.steering.responsiveness = old_config->steering.responsiveness;
+        new_config.steering.return_rate = old_config->steering.return_rate;
     }
     // New fields in future versions will get defaults automatically
 
@@ -434,6 +444,80 @@ void tuning_reset_realistic_throttle(void)
 int16_t tuning_get_simulated_velocity(void)
 {
     return simulated_velocity;
+}
+
+// ============================================================================
+// Realistic Steering
+// ============================================================================
+
+// Current smoothed steering input (single value - like a mechanical linkage)
+// All axles follow this proportionally based on their ratios
+static int16_t current_steering_input = 0;
+
+int16_t tuning_apply_realistic_steering(int16_t target_input)
+{
+    const steering_tuning_t *steer = &current_config.steering;
+
+    // Convert responsiveness (0-100) to max movement rate per tick
+    // 0 = very slow (max ~10), 100 = fast (max ~60)
+    int16_t max_move_rate = 10 + (steer->responsiveness * 50) / 100;
+
+    // Convert return_rate (0-100) to max center return speed
+    int16_t max_return_rate = 10 + (steer->return_rate * 60) / 100;
+
+    // Minimum rate to ensure we actually reach the target
+    const int16_t min_rate = 3;
+
+    // Threshold to consider "returning to center" (within ±50 of center)
+    const int16_t center_threshold = 50;
+
+    int16_t delta = target_input - current_steering_input;
+
+    if (delta == 0) {
+        return current_steering_input;
+    }
+
+    // Determine max rate based on whether we're steering or centering
+    int16_t max_rate;
+    if (target_input > -center_threshold && target_input < center_threshold) {
+        max_rate = max_return_rate;
+    } else {
+        max_rate = max_move_rate;
+    }
+
+    // Proportional rate: faster when far, slower when close (ease-in/ease-out)
+    // Divisor of 20 gives good feel: at delta=1000 rate=50, at delta=100 rate=5
+    int16_t abs_delta = (delta > 0) ? delta : -delta;
+    int16_t rate = abs_delta / 20;
+
+    // Clamp rate between min and max
+    if (rate > max_rate) rate = max_rate;
+    if (rate < min_rate) rate = min_rate;
+
+    // Move toward target
+    if (delta > 0) {
+        current_steering_input += rate;
+        if (current_steering_input > target_input) {
+            current_steering_input = target_input;
+        }
+    } else {
+        current_steering_input -= rate;
+        if (current_steering_input < target_input) {
+            current_steering_input = target_input;
+        }
+    }
+
+    return current_steering_input;
+}
+
+void tuning_reset_realistic_steering(void)
+{
+    current_steering_input = 0;
+}
+
+bool tuning_is_realistic_steering_enabled(void)
+{
+    return current_config.steering.realistic_enabled;
 }
 
 void tuning_set_throttle_mode(throttle_mode_t mode)
